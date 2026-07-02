@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { writeTextFile, readTextFile, BaseDirectory } from '@tauri-apps/plugin-fs';
+import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -66,6 +66,8 @@ function play() {
   state.playing = true;
   setStatus('buffering', 'BUFFERING...');
   log(`[PLAY_ATTEMPT] url=${state.brand.streamUrl}`);
+  // Avvia lettura metadati ICY nel backend Rust
+  invoke('start_icy', { url: state.brand.streamUrl }).catch(e => log(`[ICY_START_ERR] ${e}`));
 }
 
 function stop() {
@@ -74,6 +76,13 @@ function stop() {
   state.playing = false;
   setStatus('stopped', 'FERMATO');
   log('[PLAY_STOP]');
+  invoke('stop_icy').catch(() => {});
+  // Reset now-playing
+  state.currentTitle  = '';
+  state.currentArtist = '';
+  document.getElementById('trackTitle').textContent  = '—';
+  document.getElementById('trackArtist').textContent = '';
+  showFallbackCover();
 }
 
 audio.addEventListener('playing', () => {
@@ -86,20 +95,9 @@ audio.addEventListener('error', () => {
   log(`[STREAM_ERROR] ${audio.error?.message || 'unknown'}`);
 });
 
-// ── ICY metadata (now playing) ────────────────────────────────────────────────
-// Tauri non ha window.EventSource per ICY, usiamo polling /api/radio-now-playing
-// oppure leggiamo il titolo da audio.title quando disponibile
-audio.addEventListener('timeupdate', () => {
-  const t = audio.title || '';
-  if (t && t !== state.currentTitle) {
-    parseNowPlaying(t);
-  }
-});
-
-function parseNowPlaying(raw) {
-  const parts = raw.split(' - ');
-  const artist = parts.length > 1 ? parts[0].trim() : '';
-  const title  = parts.length > 1 ? parts.slice(1).join(' - ').trim() : raw.trim();
+// ── ICY metadata — letta dal backend Rust via stream ──────────────────────────
+listen('icy-meta', (event) => {
+  const { raw, title, artist } = event.payload;
   if (title === state.currentTitle) return;
   state.currentTitle  = title;
   state.currentArtist = artist;
@@ -107,11 +105,16 @@ function parseNowPlaying(raw) {
   document.getElementById('trackArtist').textContent = artist;
   log(`[TRACK_CHANGE] ${raw}`);
   fetchCover(title, artist);
-}
+});
 
 // ── Cover ─────────────────────────────────────────────────────────────────────
+function showFallbackCover() {
+  document.getElementById('coverImg').hidden = true;
+  document.getElementById('coverFallback').style.display = '';
+}
+
 async function fetchCover(title, artist) {
-  if (!title) return;
+  if (!title) { showFallbackCover(); return; }
   try {
     const result = await invoke('fetch_artwork', {
       title,
