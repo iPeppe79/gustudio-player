@@ -6,13 +6,15 @@ mod icy;
 use icy::IcyState;
 
 #[tauri::command]
-fn start_icy(state: tauri::State<'_, IcyState>, app: tauri::AppHandle, url: String) {
+async fn start_icy(state: tauri::State<'_, IcyState>, app: tauri::AppHandle, url: String) -> Result<(), ()> {
     state.start(app, url);
+    Ok(())
 }
 
 #[tauri::command]
-fn stop_icy(state: tauri::State<'_, IcyState>) {
+async fn stop_icy(state: tauri::State<'_, IcyState>) -> Result<(), ()> {
     state.stop();
+    Ok(())
 }
 
 fn main() {
