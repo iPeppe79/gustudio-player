@@ -66,7 +66,7 @@ function initAudioContext() {
 function play() {
   if (!state.brand) return;
   initAudioContext();
-  if (audioCtx.state === 'suspended') audioCtx.resume();
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
   audio.src = state.brand.streamUrl;
   audio.load();
   audio.play().catch(e => log(`[PLAY_ERROR] ${e.message}`));
