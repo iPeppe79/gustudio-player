@@ -9,6 +9,8 @@
     "beforeBuildCommand": "npm run build"
   },
   "app": {
+    "macOSPrivateApi": true,
+    "withGlobalTauri": true,
     "windows": [
       {
         "title": "GUStudio Player",
