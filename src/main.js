@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, convertFileSrc } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
@@ -44,16 +44,23 @@ function applyBrand(brand) {
 
 // ── Audio ─────────────────────────────────────────────────────────────────────
 const audio = document.getElementById('audioEl');
-let audioCtx, analyser, source;
+let audioCtx, analyser;
 
 function initAudioContext() {
   if (audioCtx) return;
-  audioCtx = new AudioContext();
-  analyser = audioCtx.createAnalyser();
-  analyser.fftSize = 256;
-  source = audioCtx.createMediaElementSource(audio);
-  source.connect(analyser);
-  analyser.connect(audioCtx.destination);
+  try {
+    audioCtx = new AudioContext();
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 256;
+    const source = audioCtx.createMediaElementSource(audio);
+    source.connect(analyser);
+    analyser.connect(audioCtx.destination);
+  } catch (e) {
+    // WKWebView cross-origin taint: Web Audio analysis non disponibile,
+    // usiamo il visualizer animato basato sul tempo
+    log(`[VIZ_FALLBACK] ${e.message}`);
+    analyser = null;
+  }
 }
 
 function play() {
@@ -124,7 +131,7 @@ async function fetchCover(title, artist) {
     const img = document.getElementById('coverImg');
     const fb  = document.getElementById('coverFallback');
     if (result.local_path) {
-      img.src = `asset://localhost/${result.local_path.replace(/^\//, '')}`;
+      img.src = convertFileSrc(result.local_path);
       img.hidden = false;
       fb.style.display = 'none';
       log(`[ARTWORK_OK] ${result.from_cache ? 'cache' : 'server'}`);
@@ -143,28 +150,45 @@ const canvas = document.getElementById('vizCanvas');
 const ctx2d  = canvas.getContext('2d');
 canvas.width  = 300;
 canvas.height = 40;
+const BARS = 40;
+const BAR_W = 300 / BARS - 1;
 
-function drawViz() {
+// Frequenze seed per animazione fake — ogni barra ha la sua fase
+const phases = Array.from({ length: BARS }, (_, i) => i * 0.4 + Math.random() * 2);
+const speeds = Array.from({ length: BARS }, () => 0.8 + Math.random() * 1.2);
+
+function drawViz(ts = 0) {
   requestAnimationFrame(drawViz);
-  if (!analyser || !state.playing) {
-    ctx2d.clearRect(0, 0, 300, 40);
-    return;
-  }
-  const buf = new Uint8Array(analyser.frequencyBinCount);
-  analyser.getByteFrequencyData(buf);
   ctx2d.clearRect(0, 0, 300, 40);
+  if (!state.playing) return;
 
-  const primary = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim();
-  const bars = 40;
-  const w = 300 / bars - 1;
-  for (let i = 0; i < bars; i++) {
-    const val = buf[Math.floor(i * buf.length / bars)] / 255;
-    const h   = Math.max(2, val * 38);
-    ctx2d.fillStyle = primary + Math.floor(val * 200 + 55).toString(16).padStart(2, '0');
-    ctx2d.fillRect(i * (w + 1), 40 - h, w, h);
+  const primary = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim() || '#29ABE2';
+  const t = ts / 1000;
+
+  if (analyser) {
+    // FFT reale
+    const buf = new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteFrequencyData(buf);
+    for (let i = 0; i < BARS; i++) {
+      const val = buf[Math.floor(i * buf.length / BARS)] / 255;
+      const h   = Math.max(2, val * 38);
+      ctx2d.fillStyle = primary + Math.floor(val * 200 + 55).toString(16).padStart(2, '0');
+      ctx2d.fillRect(i * (BAR_W + 1), 40 - h, BAR_W, h);
+    }
+  } else {
+    // Fallback animato: envelope bassa + variazione per frequenza
+    for (let i = 0; i < BARS; i++) {
+      const env = 0.3 + 0.5 * Math.abs(Math.sin(t * 0.4));
+      const wave = Math.sin(t * speeds[i] + phases[i]);
+      const val  = Math.max(0, env * (0.4 + 0.6 * wave));
+      const h    = Math.max(2, val * 36);
+      const alpha = Math.floor(val * 180 + 55).toString(16).padStart(2, '0');
+      ctx2d.fillStyle = primary + alpha;
+      ctx2d.fillRect(i * (BAR_W + 1), 40 - h, BAR_W, h);
+    }
   }
 }
-drawViz();
+requestAnimationFrame(drawViz);
 
 // ── Log ───────────────────────────────────────────────────────────────────────
 function log(msg) {

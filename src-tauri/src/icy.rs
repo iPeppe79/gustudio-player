@@ -66,6 +66,7 @@ async fn icy_connect(app: &AppHandle, url: &str) -> Result<(), String> {
         .and_then(|s| s.parse().ok())
         .unwrap_or(16000);
 
+    eprintln!("[ICY] connected to {url}, metaint={metaint}");
     let mut stream = resp.bytes_stream();
     let mut buf: VecDeque<u8> = VecDeque::new();
     let mut last_title = String::new();
@@ -91,6 +92,7 @@ async fn icy_connect(app: &AppHandle, url: &str) -> Result<(), String> {
         if let Some(stream_title) = extract_title(meta_str) {
             if stream_title == last_title { continue; }
             last_title = stream_title.clone();
+            eprintln!("[ICY] title: {stream_title}");
 
             let (artist, title) = split(stream_title.as_str());
             let _ = app.emit("icy-meta", IcyMeta {
