@@ -1,0 +1,32 @@
+{
+  "productName": "GUStudio Player",
+  "version": "0.1.0",
+  "identifier": "it.gustudio.player",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "GUStudio Player",
+        "width": 300,
+        "height": 520,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": []
+  }
+}

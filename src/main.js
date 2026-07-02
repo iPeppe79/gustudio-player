@@ -1,0 +1,237 @@
+import { invoke } from '@tauri-apps/api/core';
+import { writeTextFile, readTextFile, BaseDirectory } from '@tauri-apps/plugin-fs';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+
+// ── State ─────────────────────────────────────────────────────────────────────
+const state = {
+  brand: null,
+  playing: false,
+  currentTitle: '',
+  currentArtist: '',
+  uuid: crypto.randomUUID(),
+  log: [],
+};
+
+// ── Brand loading ─────────────────────────────────────────────────────────────
+const BRANDS = ['funside', 'professione-casa', 'gustracks'];
+
+async function loadBrand(brandId) {
+  const resp = await fetch(`/${brandId}.json`);
+  if (!resp.ok) throw new Error(`brand ${brandId} non trovato`);
+  return resp.json();
+}
+
+function applyBrand(brand) {
+  state.brand = brand;
+  const r = document.documentElement.style;
+  r.setProperty('--primary', brand.theme.primary);
+  r.setProperty('--bg', brand.theme.background);
+  r.setProperty('--text', brand.theme.text);
+  r.setProperty('--primary-a20', brand.theme.primary + '33');
+  r.setProperty('--primary-a60', brand.theme.primary + '99');
+
+  document.getElementById('brandName').textContent = brand.productName;
+  document.getElementById('fallbackName').textContent = brand.productName;
+  document.getElementById('brandLabel').textContent = `${brand.brandId}  v0.1.0`;
+  document.title = brand.windowTitle || brand.productName;
+
+  const logo = document.getElementById('brandLogo');
+  logo.hidden = true; // placeholder; logo PNG goes in brands/{id}-logo.png
+
+  document.getElementById('streamUrlInput').value = brand.streamUrl;
+  log(`[BRAND_LOADED] ${brand.brandId}`);
+}
+
+// ── Audio ─────────────────────────────────────────────────────────────────────
+const audio = document.getElementById('audioEl');
+let audioCtx, analyser, source;
+
+function initAudioContext() {
+  if (audioCtx) return;
+  audioCtx = new AudioContext();
+  analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 256;
+  source = audioCtx.createMediaElementSource(audio);
+  source.connect(analyser);
+  analyser.connect(audioCtx.destination);
+}
+
+function play() {
+  if (!state.brand) return;
+  initAudioContext();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  audio.src = state.brand.streamUrl;
+  audio.load();
+  audio.play().catch(e => log(`[PLAY_ERROR] ${e.message}`));
+  state.playing = true;
+  setStatus('buffering', 'BUFFERING...');
+  log(`[PLAY_ATTEMPT] url=${state.brand.streamUrl}`);
+}
+
+function stop() {
+  audio.pause();
+  audio.src = '';
+  state.playing = false;
+  setStatus('stopped', 'FERMATO');
+  log('[PLAY_STOP]');
+}
+
+audio.addEventListener('playing', () => {
+  setStatus('playing', 'IN RIPRODUZIONE');
+  log('[PLAY_START]');
+});
+audio.addEventListener('waiting', () => setStatus('buffering', 'BUFFERING...'));
+audio.addEventListener('error', () => {
+  setStatus('error', 'ERRORE');
+  log(`[STREAM_ERROR] ${audio.error?.message || 'unknown'}`);
+});
+
+// ── ICY metadata (now playing) ────────────────────────────────────────────────
+// Tauri non ha window.EventSource per ICY, usiamo polling /api/radio-now-playing
+// oppure leggiamo il titolo da audio.title quando disponibile
+audio.addEventListener('timeupdate', () => {
+  const t = audio.title || '';
+  if (t && t !== state.currentTitle) {
+    parseNowPlaying(t);
+  }
+});
+
+function parseNowPlaying(raw) {
+  const parts = raw.split(' - ');
+  const artist = parts.length > 1 ? parts[0].trim() : '';
+  const title  = parts.length > 1 ? parts.slice(1).join(' - ').trim() : raw.trim();
+  if (title === state.currentTitle) return;
+  state.currentTitle  = title;
+  state.currentArtist = artist;
+  document.getElementById('trackTitle').textContent  = title || '—';
+  document.getElementById('trackArtist').textContent = artist;
+  log(`[TRACK_CHANGE] ${raw}`);
+  fetchCover(title, artist);
+}
+
+// ── Cover ─────────────────────────────────────────────────────────────────────
+async function fetchCover(title, artist) {
+  if (!title) return;
+  try {
+    const result = await invoke('fetch_artwork', {
+      title,
+      artist,
+      station: state.brand?.productName || '',
+    });
+    const img = document.getElementById('coverImg');
+    const fb  = document.getElementById('coverFallback');
+    if (result.local_path) {
+      img.src = `asset://localhost/${result.local_path.replace(/^\//, '')}`;
+      img.hidden = false;
+      fb.style.display = 'none';
+      log(`[ARTWORK_OK] ${result.from_cache ? 'cache' : 'server'}`);
+    } else {
+      img.hidden = true;
+      fb.style.display = '';
+      if (result.error) log(`[ARTWORK_ERR] ${result.error}`);
+    }
+  } catch (e) {
+    log(`[ARTWORK_EXCEPTION] ${e}`);
+  }
+}
+
+// ── Visualizer ────────────────────────────────────────────────────────────────
+const canvas = document.getElementById('vizCanvas');
+const ctx2d  = canvas.getContext('2d');
+canvas.width  = 300;
+canvas.height = 40;
+
+function drawViz() {
+  requestAnimationFrame(drawViz);
+  if (!analyser || !state.playing) {
+    ctx2d.clearRect(0, 0, 300, 40);
+    return;
+  }
+  const buf = new Uint8Array(analyser.frequencyBinCount);
+  analyser.getByteFrequencyData(buf);
+  ctx2d.clearRect(0, 0, 300, 40);
+
+  const primary = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim();
+  const bars = 40;
+  const w = 300 / bars - 1;
+  for (let i = 0; i < bars; i++) {
+    const val = buf[Math.floor(i * buf.length / bars)] / 255;
+    const h   = Math.max(2, val * 38);
+    ctx2d.fillStyle = primary + Math.floor(val * 200 + 55).toString(16).padStart(2, '0');
+    ctx2d.fillRect(i * (w + 1), 40 - h, w, h);
+  }
+}
+drawViz();
+
+// ── Log ───────────────────────────────────────────────────────────────────────
+function log(msg) {
+  const ts = new Date().toISOString().replace('T', ' ').slice(0, 23);
+  const line = `[${ts}] ${msg}`;
+  state.log.push(line);
+  const body = document.getElementById('logBody');
+  body.textContent += line + '\n';
+  body.scrollTop = body.scrollHeight;
+}
+
+// ── Status ────────────────────────────────────────────────────────────────────
+function setStatus(cls, label) {
+  const dot = document.getElementById('statusDot');
+  dot.className = 'status-dot ' + cls;
+  document.getElementById('statusLabel').textContent = label;
+}
+
+// ── UI wiring ─────────────────────────────────────────────────────────────────
+const win = getCurrentWindow();
+
+document.getElementById('btnClose').addEventListener('click', () => win.close());
+document.getElementById('btnMini').addEventListener('click',  () => win.minimize());
+
+document.getElementById('btnPlay').addEventListener('click', play);
+document.getElementById('btnStop').addEventListener('click', stop);
+
+document.getElementById('volSlider').addEventListener('input', e => {
+  audio.volume = parseFloat(e.target.value);
+});
+
+// Settings panel
+const settingsPanel = document.getElementById('settingsPanel');
+document.getElementById('btnSettings').addEventListener('click', () => {
+  settingsPanel.hidden = !settingsPanel.hidden;
+});
+document.getElementById('btnSettingsClose').addEventListener('click', () => {
+  settingsPanel.hidden = true;
+});
+document.getElementById('btnSaveSettings').addEventListener('click', async () => {
+  const brandId = document.getElementById('brandSelect').value;
+  const brand = await loadBrand(brandId);
+  applyBrand(brand);
+  stop();
+  settingsPanel.hidden = true;
+});
+
+// Log panel
+const logPanel = document.getElementById('logPanel');
+document.getElementById('btnShowLog').addEventListener('click', () => {
+  settingsPanel.hidden = true;
+  logPanel.hidden = false;
+});
+document.getElementById('btnLogClose').addEventListener('click', () => { logPanel.hidden = true; });
+document.getElementById('btnCopyLog').addEventListener('click', copyLog);
+document.getElementById('btnCopyLogInPanel').addEventListener('click', copyLog);
+
+async function copyLog() {
+  try { await navigator.clipboard.writeText(state.log.join('\n')); } catch {}
+}
+
+document.getElementById('installedVersion').textContent = '0.1.0';
+document.getElementById('playerUuid').textContent = state.uuid;
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+(async () => {
+  const savedBrand = localStorage.getItem('brand') || 'funside';
+  const brand = await loadBrand(savedBrand).catch(() => loadBrand('funside'));
+  applyBrand(brand);
+  document.getElementById('brandSelect').value = brand.brandId;
+  log('[PLAYER_START]');
+  play(); // autoplay
+})();

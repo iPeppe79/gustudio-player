@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>GUStudio Player</title>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+  <div id="app">
+
+    <!-- Header -->
+    <div class="header" id="header">
+      <div class="header-left">
+        <button class="traffic-btn close-btn" id="btnClose" title="Chiudi"></button>
+        <button class="traffic-btn mini-btn" id="btnMini" title="Minimizza"></button>
+        <button class="icon-btn settings-btn" id="btnSettings" title="Impostazioni">⚙</button>
+      </div>
+      <div class="header-logo">
+        <img id="brandLogo" src="" alt="" hidden/>
+        <span id="brandName"></span>
+      </div>
+    </div>
+
+    <!-- Cover -->
+    <div class="cover-wrap" id="coverWrap">
+      <img id="coverImg" src="" alt="cover" hidden/>
+      <div class="cover-fallback" id="coverFallback">
+        <span id="fallbackName"></span>
+        <span class="live-tag">LIVE STREAM</span>
+      </div>
+      <canvas id="vizCanvas"></canvas>
+    </div>
+
+    <!-- Now playing -->
+    <div class="now-playing">
+      <span class="status-dot" id="statusDot"></span>
+      <span class="status-label" id="statusLabel">IN ATTESA</span>
+    </div>
+    <div class="track-title" id="trackTitle">—</div>
+    <div class="track-artist" id="trackArtist"></div>
+
+    <!-- Controls -->
+    <div class="controls">
+      <button class="btn-play" id="btnPlay">▶</button>
+      <button class="btn-stop" id="btnStop">■</button>
+      <div class="vol-wrap">
+        <span class="vol-label">VOL</span>
+        <input type="range" id="volSlider" min="0" max="1" step="0.01" value="0.8"/>
+      </div>
+    </div>
+
+    <!-- Update banner (hidden by default) -->
+    <div class="update-banner" id="updateBanner" hidden>
+      <span id="updateText">Aggiornamento disponibile</span>
+      <button id="btnUpdate">Installa</button>
+    </div>
+
+    <!-- Settings panel -->
+    <div class="panel" id="settingsPanel" hidden>
+      <div class="panel-header">
+        <span>Impostazioni</span>
+        <button class="panel-close" id="btnSettingsClose">✕</button>
+      </div>
+      <div class="panel-body">
+        <label>Brand</label>
+        <select id="brandSelect">
+          <option value="funside">Funside Radio</option>
+          <option value="professione-casa">One Radio</option>
+          <option value="gustracks">GUSTracks</option>
+        </select>
+        <label>Stream URL</label>
+        <input type="text" id="streamUrlInput" placeholder="https://stream2.multi-radio.com/..."/>
+        <button id="btnSaveSettings">Salva</button>
+        <hr/>
+        <label>Versione installata</label>
+        <span id="installedVersion" class="mono">—</span>
+        <button id="btnCheckUpdate">Controlla aggiornamenti</button>
+        <hr/>
+        <button id="btnShowLog">Log eventi</button>
+        <button id="btnCopyLog">Copia log</button>
+      </div>
+    </div>
+
+    <!-- Log panel -->
+    <div class="panel log-panel" id="logPanel" hidden>
+      <div class="panel-header">
+        <span>Log eventi</span>
+        <div>
+          <button id="btnCopyLogInPanel">Copia</button>
+          <button class="panel-close" id="btnLogClose">✕ Chiudi</button>
+        </div>
+      </div>
+      <div class="log-body" id="logBody"></div>
+      <div class="log-footer">
+        <span id="playerUuid" class="mono"></span>
+        <span id="brandLabel" class="mono"></span>
+      </div>
+    </div>
+
+  </div>
+
+  <audio id="audioEl" preload="none" crossorigin="anonymous"></audio>
+  <script type="module" src="main.js"></script>
+</body>
+</html>

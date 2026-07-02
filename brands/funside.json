@@ -1,0 +1,12 @@
+{
+  "brandId": "funside",
+  "productName": "Funside Radio",
+  "windowTitle": "Funside Radio",
+  "streamUrl": "https://stream2.multi-radio.com/funsidelatina",
+  "theme": {
+    "primary": "#29ABE2",
+    "background": "#0A0A14",
+    "text": "#E8F4FB"
+  },
+  "logoHeight": 44
+}

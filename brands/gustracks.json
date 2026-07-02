@@ -1,0 +1,12 @@
+{
+  "brandId": "gustracks",
+  "productName": "GUSTracks",
+  "windowTitle": "GUSTracks",
+  "streamUrl": "https://stream2.multi-radio.com/gustracks",
+  "theme": {
+    "primary": "#C8A85A",
+    "background": "#0D0C0A",
+    "text": "#F5ECD7"
+  },
+  "logoHeight": 36
+}

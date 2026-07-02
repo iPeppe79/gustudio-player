@@ -1,0 +1,12 @@
+{
+  "brandId": "professione-casa",
+  "productName": "One Radio",
+  "windowTitle": "One Radio",
+  "streamUrl": "https://stream2.multi-radio.com/profcasa",
+  "theme": {
+    "primary": "#E53E2D",
+    "background": "#101010",
+    "text": "#FFFFFF"
+  },
+  "logoHeight": 22
+}
