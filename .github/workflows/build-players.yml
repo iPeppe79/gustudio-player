@@ -1,0 +1,59 @@
+# .github/workflows/build-players.yml
+# Fabbrica multi-OS per il player Tauri.
+# Push su main -> 3 macchine NATIVE compilano in parallelo:
+#   macOS Silicon (arm64), macOS Intel (x64), Windows (x64).
+# Nessuna cross-compilation cieca: ogni installer nasce sul suo ferro.
+
+name: Build Players
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false   # se una build si rompe, le altre escono comunque
+      matrix:
+        include:
+          - name: macOS-arm64
+            os: macos-latest      # Apple Silicon
+          - name: macOS-x64
+            os: macos-13          # Intel
+          - name: Windows-x64
+            os: windows-latest
+
+    runs-on: ${{ matrix.os }}
+    name: Build ${{ matrix.name }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          # la chiave del player come SECRET, mai in chiaro nel repo
+          PLAYER_API_KEY: ${{ secrets.PLAYER_API_KEY }}
+        # tauri-action builda e raccoglie gli installer nativi in automatico
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: player-${{ matrix.name }}
+          path: |
+            src-tauri/target/release/bundle/**/*.dmg
+            src-tauri/target/release/bundle/**/*.exe
+            src-tauri/target/release/bundle/**/*.msi
+          retention-days: 14

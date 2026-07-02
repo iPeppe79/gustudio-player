@@ -1,0 +1,43 @@
+# === REGOLA D'ORO: in git va il SORGENTE, mai i binari per-architettura ===
+# Un binario ARM committato che non parte su Intel = ore di caccia a un bug fantasma.
+
+# --- Tauri / Rust ---
+/src-tauri/target/
+**/*.rs.bk
+Cargo.lock
+
+# --- Node / frontend ---
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.local
+
+# --- Build .NET legacy (finché il vecchio player convive nel repo) ---
+bin/
+obj/
+*.dll
+*.dylib
+*.pdb
+*.so
+
+# --- Output pacchetti nativi ---
+*.dmg
+*.exe
+*.msi
+*.app/
+*.deb
+*.AppImage
+
+# --- Segreti: la api_key NON si committa mai ---
+.env
+.env.*
+*.key
+secrets.json
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
