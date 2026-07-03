@@ -97,6 +97,28 @@ html, body {
   opacity: 0.8;
 }
 
+.brand-logo {
+  max-height: 28px;   /* si adatta all'header 44px con margine */
+  max-width: 140px;   /* non sfora la larghezza disponibile */
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  display: block;
+  margin: 0 auto;     /* centra nel flex-1 di .header-brand */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;   /* impedisce drag nativo Safari/WebKit */
+  pointer-events: none;      /* nessun drag, nessuna selezione */
+}
+
+/* Nessuna immagine è draggabile */
+img {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+  draggable: false;
+}
+
 /* ── Cover — sempre quadrata 300×300 ─────────────────────────────────────────── */
 .cover-wrap {
   width: 300px;

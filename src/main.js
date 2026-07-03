@@ -107,15 +107,20 @@ function play() {
   if (!state.brand) return;
   diag('PLAY_REQUEST', { audioState: 'buffering' });
   audio.src = state.brand.streamUrl; audio.load();
-  audio.play().catch(e => {
-    log('[PLAY_ERROR] '+e.message);
-    diag('AUDIO_ERROR', { audioState:'error', issueType:'play_rejected', issueNote:e.message });
+  audio.play().then(() => {
+    // play() accettato dal browser/webview
+    state.playing = true;
+    document.getElementById('btnPlay').textContent = '⏸';
+    setStatus('buffering','BUFFERING...');
+    safeInvoke('start_icy', { url: state.brand.streamUrl }).catch(e => log('[ICY_ERR] '+e));
+    log('[PLAY_ATTEMPT] '+state.brand.streamUrl);
+  }).catch(e => {
+    // Autoplay bloccato (policy): mostra play fermo, aspetta click utente
+    state.playing = false;
+    document.getElementById('btnPlay').textContent = '▶';
+    setStatus('stopped','Premi ▶ per ascoltare');
+    log('[AUTOPLAY_BLOCKED] '+e.message+' — in attesa click utente');
   });
-  state.playing = true;
-  document.getElementById('btnPlay').textContent = '⏸';
-  setStatus('buffering','BUFFERING...');
-  safeInvoke('start_icy', { url: state.brand.streamUrl }).catch(e => log('[ICY_ERR] '+e));
-  log('[PLAY_ATTEMPT] '+state.brand.streamUrl);
 }
 
 function stop() {
