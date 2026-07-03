@@ -19,12 +19,12 @@ html, body {
   user-select: none;
   overflow: hidden;
   width: 300px;
-  height: 460px;
+  height: 490px;
 }
 
 #app {
   width: 300px;
-  height: 460px;
+  height: 490px;
   background: var(--bg);
   border-radius: var(--radius);
   overflow: hidden;
@@ -148,13 +148,6 @@ img {
   color: var(--primary); opacity: 0.4;
 }
 
-/* Gradiente scuro in basso sulla cover — sotto l'EQ */
-.cover-gradient {
-  position: absolute; left: 0; right: 0; bottom: 0;
-  height: 80px;
-  background: linear-gradient(to top, rgba(0,0,0,0.82) 0%, transparent 100%);
-  pointer-events: none;
-}
 
 /* ── Now playing ─────────────────────────────────────────────────────────────── */
 .now-playing {
@@ -212,20 +205,19 @@ img {
   gap: 8px;
 }
 
-/* ── Equalizer — overlay in basso sulla cover ────────────────────────────────── */
-.eq-wrap {
-  position: absolute;
-  left: 0; right: 0; bottom: 0;
-  height: 52px;
-  pointer-events: none;
+/* ── Equalizer — sezione dedicata sotto la cover ─────────────────────────────── */
+.eq-section {
+  flex-shrink: 0;
+  height: 48px;
+  background: var(--bg);
   display: flex;
   align-items: flex-end;
+  padding-bottom: 4px;
 }
 #eqCanvas {
   width: 300px;
-  height: 52px;
+  height: 44px;
   display: block;
-  opacity: 0.85;
 }
 
 .btn-play {

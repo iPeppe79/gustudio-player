@@ -217,20 +217,33 @@ async function copyLog() {
 let audioCtx   = null;
 let analyser   = null;
 let eqRunning  = false;
-// Barre smussate con lerp (evita salti bruschi)
 let smoothBars = null;
+let eqInited   = false;
 
 function initEq() {
-  if (analyser) return true; // già inizializzato
+  if (eqInited) return !!analyser;
+  eqInited = true;
   try {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     const src = audioCtx.createMediaElementSource(audio);
     analyser  = audioCtx.createAnalyser();
-    analyser.fftSize       = 64;   // 32 bin → visivamente sufficienti
-    analyser.smoothingTimeConstant = 0.8;
+    analyser.fftSize              = 128; // 64 bin
+    analyser.smoothingTimeConstant = 0.75;
     src.connect(analyser);
     analyser.connect(audioCtx.destination);
     smoothBars = new Float32Array(analyser.frequencyBinCount).fill(0);
+
+    // Dimensiona il canvas a risoluzione corretta (Retina)
+    const canvas = document.getElementById('eqCanvas');
+    const dpr    = window.devicePixelRatio || 1;
+    const W = 300; const H = 44;
+    canvas.width  = W * dpr;
+    canvas.height = H * dpr;
+    canvas.style.width  = W + 'px';
+    canvas.style.height = H + 'px';
+    canvas.getContext('2d').scale(dpr, dpr);
+
+    log('[EQ_INIT] ok bin='+analyser.frequencyBinCount+' dpr='+dpr);
     return true;
   } catch (e) {
     log('[EQ_INIT_ERR] '+e.message);
@@ -242,32 +255,35 @@ function initEq() {
 function startEq() {
   if (eqRunning) return;
   if (!initEq()) return;
-  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
   eqRunning = true;
   drawEq();
+  log('[EQ_START]');
 }
 
 function stopEq() {
+  if (!eqRunning) return;
   eqRunning = false;
-  // Svuota il canvas con fade-out graduale
   fadeOutEq();
 }
 
 function fadeOutEq() {
   const canvas = document.getElementById('eqCanvas');
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-  const W = canvas.width; const H = canvas.height;
-  let fade = 0;
+  if (!canvas || !smoothBars) return;
+  const dpr = window.devicePixelRatio || 1;
+  const ctx  = canvas.getContext('2d');
+  const W = 300; const H = 44;
   function step() {
-    if (eqRunning) return; // ripartito
-    fade++;
-    const factor = Math.max(0, 1 - fade * 0.08);
-    if (!smoothBars) return;
-    for (let i = 0; i < smoothBars.length; i++) smoothBars[i] *= factor;
+    if (eqRunning) return;
+    let any = false;
+    for (let i = 0; i < smoothBars.length; i++) {
+      smoothBars[i] *= 0.88;
+      if (smoothBars[i] > 0.005) any = true;
+    }
+    ctx.clearRect(0, 0, W, H);
     renderEqBars(ctx, W, H);
-    if (factor > 0.01) requestAnimationFrame(step);
-    else { ctx.clearRect(0,0,W,H); }
+    if (any) requestAnimationFrame(step);
+    else ctx.clearRect(0, 0, W, H);
   }
   requestAnimationFrame(step);
 }
@@ -277,47 +293,45 @@ function drawEq() {
   const canvas = document.getElementById('eqCanvas');
   if (!canvas) { eqRunning = false; return; }
   const ctx = canvas.getContext('2d');
-  const W = canvas.width; const H = canvas.height;
+  const W = 300; const H = 44;
 
   const data = new Uint8Array(analyser.frequencyBinCount);
   analyser.getByteFrequencyData(data);
 
-  // Lerp verso i valori reali
-  const LERP = 0.18;
+  const LERP_UP = 0.45; const LERP_DN = 0.14;
   for (let i = 0; i < smoothBars.length; i++) {
-    const target = data[i] / 255;
-    smoothBars[i] += (target - smoothBars[i]) * (target > smoothBars[i] ? LERP * 2.5 : LERP);
+    const t = data[i] / 255;
+    smoothBars[i] += (t - smoothBars[i]) * (t > smoothBars[i] ? LERP_UP : LERP_DN);
   }
 
+  ctx.clearRect(0, 0, W, H);
   renderEqBars(ctx, W, H);
   requestAnimationFrame(drawEq);
 }
 
 function renderEqBars(ctx, W, H) {
-  ctx.clearRect(0, 0, W, H);
   if (!smoothBars) return;
-
-  // Leggi il colore primario dal CSS
   const primary = getComputedStyle(document.documentElement)
     .getPropertyValue('--primary').trim() || '#29ABE2';
 
-  const BAR_COUNT = smoothBars.length; // 32
+  // Usa solo i primi 2/3 dei bin (le alte frequenze sono poco significative sul radio mp3)
+  const BAR_COUNT = Math.floor(smoothBars.length * 0.65);
   const GAP  = 2;
   const barW = (W - GAP * (BAR_COUNT - 1)) / BAR_COUNT;
 
   for (let i = 0; i < BAR_COUNT; i++) {
-    const v   = smoothBars[i];
-    const bH  = Math.max(2, v * H);
-    const x   = i * (barW + GAP);
-    const y   = H - bH;
+    const v  = smoothBars[i];
+    const bH = Math.max(2, v * H);
+    const x  = i * (barW + GAP);
+    const y  = H - bH;
 
-    // Gradiente verticale per ogni barra
     const grad = ctx.createLinearGradient(0, y, 0, H);
-    grad.addColorStop(0,   primary + 'CC');
-    grad.addColorStop(1,   primary + '44');
+    grad.addColorStop(0, primary + 'DD');
+    grad.addColorStop(1, primary + '33');
     ctx.fillStyle = grad;
     ctx.beginPath();
-    ctx.roundRect(x, y, barW, bH, [2, 2, 0, 0]);
+    if (ctx.roundRect) ctx.roundRect(x, y, barW, bH, [2, 2, 0, 0]);
+    else ctx.rect(x, y, barW, bH);
     ctx.fill();
   }
 }
