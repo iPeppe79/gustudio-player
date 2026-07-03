@@ -91,11 +91,26 @@ Ordine corretto in `init()`:
 | `APP_EXIT` | Chiusura finestra |
 | `NETWORK_LOST/RESTORED` | Cambio connettività |
 | `AUDIO_STALL/RECOVERED` | Stallo stream |
+| `RECONNECT` | Watchdog ha forzato riconnessione (extra: stall_ms, attempt) |
+| `LONG_SILENCE` | Audio playing ma nessun TRACK_CHANGE da >20min (extra: silence_ms) |
 
 ### Throttle `diag()`
 - BUFFERING / AUDIO_STALL: max 1 ogni 15s
 - HEARTBEAT: max 1 ogni 60s
+- RECONNECT: max 1 ogni 5s
+- LONG_SILENCE: max 1 ogni 20min
 - default: max 1 ogni 2s, global min 2s tra qualsiasi evento
+
+### Watchdog (src/main.js)
+Variabili: `_watchdogTimer`, `_reconnectAttempt`, `_stallStartedAt`, `_playRequestedAt`, `_playStartedAt`, `_lastTrackAt`
+
+- **startWatchdog(reason)**: avvia timer con backoff esponenziale (5s→10s→20s→40s max). Scatta se audio è in waiting/stalled/error.
+- **clearWatchdog()**: cancella timer (chiamato su 'playing' e stop())
+- **play()**: resetta `_playRequestedAt` e `_lastTrackAt`, chiama clearWatchdog()
+- **stop()**: resetta tutto incluso `_playStartedAt`
+- **audio 'playing'**: clearWatchdog(), reset `_reconnectAttempt=0`, calcola `buffer_time_ms` in PLAY_START_OK extra
+- **HEARTBEAT JS**: include `extra.uptime_min` (minuti da primo play), controlla LONG_SILENCE ogni 60s
+- **TRACK_CHANGE**: aggiorna `_lastTrackAt`
 
 ---
 

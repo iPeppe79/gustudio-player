@@ -62,10 +62,12 @@ async function safeInvoke(cmd, args) {
 // Rate limiter: max 1 evento per tipo ogni N ms, globalmente max 1 req/2s
 const _diagLast = {};
 const _DIAG_THROTTLE = {
-  BUFFERING:      15000,  // max 1 ogni 15s
+  BUFFERING:      15000,
   AUDIO_STALL:    15000,
   AUDIO_RECOVERED: 5000,
   HEARTBEAT:      60000,
+  RECONNECT:       5000,
+  LONG_SILENCE: 20*60*1000,
   default:         2000,
 };
 let _diagLastGlobal = 0;
@@ -134,6 +136,9 @@ function applyBrand(brand) {
 // ── Play / Stop ───────────────────────────────────────────────────────────────
 function play() {
   if (!state.brand) return;
+  _playRequestedAt = Date.now();
+  _lastTrackAt     = Date.now(); // evita LONG_SILENCE immediato su nuovo play
+  clearWatchdog();
   // Setto playing=true PRIMA di audio.play() così l'evento 'playing' trova lo stato corretto
   state.playing    = true;
   state.audioPhase = 'buffering';
@@ -155,6 +160,10 @@ function play() {
 }
 
 function stop() {
+  clearWatchdog();
+  _reconnectAttempt = 0;
+  _playStartedAt    = 0;
+  _playRequestedAt  = 0;
   diag('STOP_REQUEST', { audioState: 'stopped' });
   audio.pause(); audio.src = '';
   safeInvoke('stop_icy').catch(()=>{});
@@ -324,6 +333,38 @@ async function refreshCacheInfo() {
 
 async function copyLog() {
   try { await navigator.clipboard.writeText(state.log.join('\n')); } catch(e) {}
+}
+
+// ── Watchdog / resilienza ─────────────────────────────────────────────────────
+let _watchdogTimer    = null;
+let _reconnectAttempt = 0;
+let _stallStartedAt   = 0;
+let _playRequestedAt  = 0;
+let _playStartedAt    = 0;
+let _lastTrackAt      = 0;
+
+function _watchdogDelay(n) { return Math.min(40000, 5000 * Math.pow(2, n)); }
+
+function startWatchdog(reason) {
+  clearWatchdog();
+  if (!_stallStartedAt) _stallStartedAt = Date.now();
+  const delay = _watchdogDelay(_reconnectAttempt);
+  log('[WATCHDOG] '+reason+' delay='+Math.round(delay/1000)+'s attempt='+_reconnectAttempt);
+  _watchdogTimer = setTimeout(() => {
+    _watchdogTimer = null;
+    if (!state.playing) return;
+    const stallMs = Date.now() - _stallStartedAt;
+    log('[RECONNECT] stall_ms='+stallMs+' attempt='+_reconnectAttempt+' reason='+reason);
+    diag('RECONNECT', { audioState:'buffering', issueType:'watchdog_reconnect',
+      issueNote: reason, extra: { stall_ms: stallMs, attempt: _reconnectAttempt } });
+    _reconnectAttempt++;
+    play();
+  }, delay);
+}
+
+function clearWatchdog() {
+  if (_watchdogTimer) { clearTimeout(_watchdogTimer); _watchdogTimer = null; }
+  _stallStartedAt = 0;
 }
 
 // ── Neon pulse cover — colore via setInterval, respiro via CSS @keyframes ────
@@ -504,21 +545,28 @@ function wireAudioEvents() {
 
   audio.addEventListener('playing', () => {
     const wasErr = state.audioPhase==='error' || state.audioPhase==='stall';
+    const bufMs  = _playRequestedAt > 0 ? Date.now() - _playRequestedAt : null;
+    clearWatchdog();
+    _reconnectAttempt = 0;
+    if (!_playStartedAt) _playStartedAt = Date.now();
     state.audioPhase = 'playing';
     setStatus('playing','IN RIPRODUZIONE');
-    const ev = wasErr ? 'AUDIO_RECOVERED' : 'PLAY_START_OK';
-    log('['+ev+']'); diag(ev, { audioState:'playing' });
+    const ev    = wasErr ? 'AUDIO_RECOVERED' : 'PLAY_START_OK';
+    const extra = bufMs !== null ? { buffer_time_ms: bufMs } : null;
+    log('['+ev+'] buf='+bufMs+'ms'); diag(ev, { audioState:'playing', extra });
     setCoverPlaying(true); startNeon();
   });
   audio.addEventListener('waiting', () => {
     state.audioPhase = 'buffering'; setStatus('buffering','BUFFERING...');
     log('[BUFFERING]'); diag('BUFFERING', { audioState:'buffering', issueType:'rebuffer' });
     setCoverPlaying(false); stopNeon();
+    startWatchdog('rebuffer');
   });
   audio.addEventListener('stalled', () => {
     state.audioPhase = 'stall'; log('[AUDIO_STALL]'); setCoverPlaying(false); stopNeon();
     diag('AUDIO_STALL', { audioState:'error', issueType:'stall',
       issueNote:'rs='+audio.readyState+' ns='+audio.networkState });
+    startWatchdog('stall');
   });
   audio.addEventListener('error', () => {
     state.audioPhase = 'error'; setCoverPlaying(false); stopNeon();
@@ -526,6 +574,7 @@ function wireAudioEvents() {
     const msg  = (audio.error && audio.error.message) || 'unknown';
     setStatus('error','ERRORE STREAM'); log('[AUDIO_ERROR] code='+code+' '+msg);
     diag('AUDIO_ERROR', { audioState:'error', issueType:'media_error_'+code, issueNote:msg });
+    startWatchdog('audio_error');
   });
 }
 
@@ -599,8 +648,17 @@ function setBrandSelect(brandId) {
 function startHeartbeat() {
   setInterval(() => {
     if (!state.brand) return;
+    const uptime = _playStartedAt > 0 ? Math.round((Date.now()-_playStartedAt)/60000) : 0;
     safeInvoke('send_event', { event:'HEARTBEAT', audioState:getAudioState(),
-      issueType:null, issueNote:null, extra:null }).catch(()=>{});
+      issueType:null, issueNote:null,
+      extra: uptime > 0 ? { uptime_min: uptime } : null }).catch(()=>{});
+    // Silenzio prolungato: playing ma nessun cambio brano da >20min
+    if (state.playing && state.audioPhase==='playing' && _lastTrackAt > 0 &&
+        (Date.now()-_lastTrackAt) > 20*60*1000) {
+      const silMin = Math.round((Date.now()-_lastTrackAt)/60000);
+      diag('LONG_SILENCE', { audioState:'playing', issueType:'no_track_change',
+        issueNote:'silent_for_'+silMin+'min', extra:{ silence_ms: Date.now()-_lastTrackAt } });
+    }
   }, 60000);
 }
 
@@ -739,6 +797,7 @@ async function init() {
         setTimeout(() => {
           if (!state.playing || title===state.currentTitle) return;
           state.currentTitle=title; state.currentArtist=artist;
+          _lastTrackAt = Date.now();
           document.getElementById('trackTitle').textContent  = title  || 'ON AIR';
           document.getElementById('trackArtist').textContent = artist || '';
           log('[TRACK_CHANGE] '+raw);
