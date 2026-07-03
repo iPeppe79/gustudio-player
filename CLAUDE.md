@@ -20,93 +20,124 @@ Brand attuali:
 ---
 
 ## STORIA (perché siamo qui)
-Il player .NET+Avalonia+BASS ha generato centinaia di build divergenti (fix su una
-macchina mai tornati altrove), bug audio (silenzio di alcuni secondi), e tre
-codebase per tre OS che si somigliano ma non sono uno. Decisione: **riscrittura in
-Tauri** — un codice, tutti gli OS presenti e futuri (Intel, Silicon, Windows x64,
-Windows ARM), motore audio = webview di sistema (mantenuto gratis da Google/Apple).
-
-Prototipo HTML testato il 02/07/2026: audio LIVE ✓, visualizer FFT ✓, brand switch ✓.
-Cover ✗ (auth mancante, vedi sotto). Verdetto: **strada Tauri confermata.**
+Il player .NET+Avalonia+BASS ha generato centinaia di build divergenti. Decisione:
+**riscrittura in Tauri** — un codice, tutti gli OS (Intel, Silicon, Windows x64/ARM),
+motore audio = webview di sistema. Prototipo validato 02/07/2026.
 
 ---
 
-## ARCHITETTURA VERIFICATA (estratta dai binari .dmg + .exe)
+## ARCHITETTURA TAURI (VERIFICATA e funzionante al 03/07/2026)
 
-Stack condiviso Mac e Windows (VERIFICATO da entrambi i binari):
-- .NET 8 (runtime 8.0.28) + Avalonia UI + SkiaSharp + HarfBuzz
-- Audio: BASS (un4seen) — `libbass.dylib` su Mac, `bass.dll` su Windows
-- Il Windows è MODULARE (PlayerCore.UI / .Audio / .Telemetry / .Supervisor),
-  il Mac è MONOLITE (Player.Native). Il Windows è la generazione più matura:
-  **portare il Mac al modello Windows, non il contrario.**
+Stack:
+- **Frontend**: Vite + vanilla JS/HTML/CSS in `src/`
+- **Backend**: Rust in `src-tauri/` — gestisce audio ICY, telemetria, cover cache
+- **Brand config**: `src/public/<brand>.json` con streamUrl, theme, colors, fallbackCover
 
-Differenze reali (le uniche): libreria audio (dll/dylib), target build
-(osx-arm64 / osx-x64 / win-x64), packaging (hdiutil UDZO / NSIS).
+### Sicurezza
+- `PLAYER_API_KEY=pc-radio-2026` nel `.env` (mai nel JS/frontend)
+- Tutte le chiamate server partono da Rust con `?api_key=` in query string
+- `SETUP_PASSWORD`: NON usare — la password di setup (`funside26`) va nel body
+  di `POST /api/player-register`, validata server-side. Non serve .env.
 
 ---
 
-## AUTH & COVER — IL FLUSSO REALE (VERIFICATO dal server tts_gui.py)
+## SERVER gus79.it — ENDPOINT PLAYER (VERIFICATI)
 
-Il server è Flask (nginx/1.24 Ubuntu) su **gus79.it**. Espone gli endpoint player.
+Base: `https://gus79.it/api/` con `?api_key=pc-radio-2026`
 
-Autenticazione player (riga ~1536 di tts_gui.py):
-```python
-if PLAYER_API_KEY and request.args.get("api_key") == PLAYER_API_KEY:
-    if path in PLAYER_API_ALLOWED_PATHS:
-        return  # passa
+| Endpoint | Metodo | Scopo |
+|----------|--------|-------|
+| `/player-register` | POST | Registra postazione. Body: uuid, station_id (URL completo stream), hostname, mac, version, platform, username, password, insegna, via, citta, referente, email, telefono |
+| `/player-health` | POST | Invia evento/log. Body: uuid, event, station_id, audio_state, issue_type, issue_note, os, architecture, version, ts |
+| `/radio-artwork` | GET | Cover brano. Query: title, station, api_key |
+
+**IMPORTANTE — `station_id`**: deve essere la URL COMPLETA dello stream
+(`https://stream2.multi-radio.com/funsidelatina`), NON solo il mount name.
+
+**Password setup** (`funside26` per funside): va nel body di `player-register`.
+Il server la valida. Senza campo password → 200 OK. Con password sbagliata → 401.
+Con `funside26` → 200 OK (VERIFICATO con curl il 03/07/2026).
+
+**Due chiavi diverse:**
+- `PLAYER_API_KEY` = `pc-radio-2026` → autenticazione endpoint macchina
+- `funside26` = password postazione → validazione setup umano lato server
+
+---
+
+## TELEMETRIA — FLUSSO CORRETTO
+
+### Race condition risolta (03/07/2026)
+`telemetry_init` **DEVE essere awaited** prima che `play()` scatti, altrimenti
+`tele.info` è None in Rust e tutti gli eventi vengono scartati silenziosamente.
+
+Ordine corretto in `init()`:
+1. `await safeInvoke('telemetry_init', ...)` → popola `state.info` in Rust + avvia heartbeat
+2. `diag('APP_START', ...)` → primo evento inviato
+3. `await checkFirstRun()` → mostra setup modal se prima volta
+4. `doRegister()` → registrazione completa con tutti i campi
+5. `play()` → avvia stream
+
+### Eventi inviati
+| Evento | Quando |
+|--------|--------|
+| `APP_START` | Avvio app (dopo telemetry_init) |
+| `PLAY_REQUEST` | Click play |
+| `PLAY_START_OK` | Audio inizia a suonare |
+| `BUFFERING` | Audio in buffering (throttle 15s) |
+| `STOP_REQUEST` | Click stop |
+| `STOP_OK` | Audio fermato |
+| `TRACK_CHANGE` | Cambio brano ICY (issue_note = "Artist — Title") |
+| `HEARTBEAT` | Ogni 60s (loop Rust + JS) |
+| `APP_EXIT` | Chiusura finestra |
+| `NETWORK_LOST/RESTORED` | Cambio connettività |
+| `AUDIO_STALL/RECOVERED` | Stallo stream |
+
+### Throttle `diag()`
+- BUFFERING / AUDIO_STALL: max 1 ogni 15s
+- HEARTBEAT: max 1 ogni 60s
+- default: max 1 ogni 2s, global min 2s tra qualsiasi evento
+
+---
+
+## NEON RING — CRASH FIX (03/07/2026)
+`requestAnimationFrame` causava SIGSEGV in `WebCore::ScrollingTree::takePendingScrollUpdates()`
+su macOS 26 (Tahoe) Beta. Fix: animazione respiro → CSS `@keyframes neon-breath`.
+Il colore cambia ogni 4s con `setInterval`. Zero RAF.
+
+---
+
+## SETUP PRIMO AVVIO
+- Form modale al primo avvio se `station_data` non in localStorage
+- Campi: insegna*, via, città, referente*, email*, telefono, password*
+- `password` va nel body di `player-register` → server valida
+- Solo se server risponde 200 → salva `station_data` in localStorage
+- Per forzare ri-registrazione: cancella `station_data` da localStorage
+
+---
+
+## STRUTTURA FILE CHIAVE
 ```
-**La chiave è un `?api_key=XXX` in query string. NON un login, NON un cookie.**
-Il prototipo prendeva 401 perché chiamava senza `api_key`.
-
-Endpoint cover: `GET /api/radio-artwork?title=<ICY>&station=<nome>&api_key=<KEY>`
-→ ritorna `{artwork, preview_url, uri}`. Cerca il titolo su Spotify, ha già
-cache per stazione lato server. [VERIFICATO righe 52404-52438]
-
-**La logica cover in JS esiste GIÀ dentro GUStudio** (funzione `fetchArtworkData`,
-riga ~56388 di tts_gui.py). Da trapiantare nel player, non da reinventare.
-
-Due chiavi diverse per due scopi (non confonderle):
-- `PLAYER_API_KEY` (es. `pc-radio-2026`) → endpoint-macchina (cover, now-playing, heartbeat)
-- `profcasa26` / `funside26` → [INFERENZA] password umane per le pagine demo `/profcasa` `/funside`
-
-⚠️ [NON VERIFICATO] Il valore ATTUALE di `PLAYER_API_KEY` sul server. Nel .dmg era
-`pc-radio-2026` ma le password sono cambiate, quindi presumo anche la chiave.
-**PRIMO TASK: trovare il valore reale nel repo/server.**
-
-Stream verificato: `stream2.multi-radio.com/<brand>`, codec **AAC-LC** (universale,
-non HE-AAC), header `access-control-allow-origin: *`, metadati ICY inline
-(`icy-metaint: 16000`) → il titolo del brano viaggia DENTRO lo stream.
-
----
-
-## SICUREZZA — DA CORREGGERE
-Oggi la `api_key` è in chiaro nei JSON di brand: chiunque apra il .app la legge.
-In Tauri va nel backend **Rust** (compilato, non estraibile a occhio). Il CORS che
-blocca il prototipo browser NON esiste in Tauri: le chiamate partono dal Rust, che
-non è un browser. Un colpo, due muri abbattuti (auth + CORS).
-
----
-
-## STRUTTURA TARGET (monorepo)
-```
-gustudio-player/
-├── src/            # frontend web (HTML/CSS/JS) — la scocca, identica a oggi
-├── src-tauri/      # backend Rust: auth, api_key, proxy verso gus79.it, cache
-├── brands/         # professione-casa.json, funside.json, gustracks.json
-└── .github/workflows/build-players.yml  # fabbrica: 3 runner nativi
+src/main.js          — logica JS principale (play/stop, ICY, telemetria, UI)
+src/index.html       — HTML con setup modal, settings panel, log panel
+src/style.css        — stile con neon CSS, status badge, cover
+src/public/funside.json — brand config (streamUrl, theme, colors)
+src-tauri/src/main.rs      — comandi Tauri (telemetry_init, telemetry_register, send_event)
+src-tauri/src/telemetry.rs — PlayerInfo, post_event, do_register, heartbeat loop
+src-tauri/src/icy.rs       — lettore ICY metadata (Rust)
+.env                 — PLAYER_API_KEY=pc-radio-2026 (mai committare)
 ```
 
 ## BUILD
-- Locale: `npm run tauri build` (produce .dmg su Mac, .exe/.msi su Windows)
-- CI: push su main → GitHub Actions builda tutti e 3 i target nativi in parallelo
-- **MAI committare binari**: bin/ obj/ dist/ target/ *.dll *.dylib (vedi .gitignore)
+- `npm run tauri build` → .dmg + .app in `src-tauri/target/release/bundle/`
+- **MAI committare**: dist/ target/ *.dll *.dylib .env
 
 ---
 
 ## STATO DEBUG
-<!-- AGGIORNA QUI a fine sessione. Esempio:
-2026-07-02: prototipo web validato (audio+viz ok, cover ko per auth).
-Prossimo: trovare PLAYER_API_KEY reale, poi scaffold Tauri.
--->
-- 2026-07-02: deciso Tauri. Prototipo HTML validato. Da fare: (1) recuperare
-  PLAYER_API_KEY attuale, (2) scaffold progetto Tauri, (3) trapianto logica cover dal JS esistente.
+- **2026-07-03**: Player Tauri funzionante. Audio ✓, ICY metadata ✓, cover ✓,
+  telemetria ✓ (log arrivano al server), setup modal ✓, neon ring ✓ (CSS),
+  crash macOS 26 risolto (rimosso RAF), drag finestra da tutti gli header ✓.
+- **Da fare**: (1) registrazione con dati reali (resettata per test — station_data
+  cancellato), (2) build per One Radio / GUSTracks, (3) CI GitHub Actions multi-brand.
+- **Postazione test nel server panel**: "As" / UUID 158c334f-b996-4614-b391-e10f4360d82a
+  (dati fittizi, da ri-registrare con dati veri).

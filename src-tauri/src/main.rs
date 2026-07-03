@@ -27,6 +27,52 @@ async fn stop_icy(state: tauri::State<'_, IcyState>) -> Result<(), ()> {
 
 // ── Telemetria ────────────────────────────────────────────────────────────────
 
+/// Inizializzazione minima all'avvio: popola state.info con dati base
+/// così send_event funziona subito, anche prima della registrazione completa.
+#[tauri::command]
+async fn telemetry_init(
+    state:      tauri::State<'_, TelemetryState>,
+    uuid:       String,
+    brand:      String,
+    version:    String,
+    station_id: String,
+    name:       String,
+) -> Result<(), ()> {
+    let info = telemetry::PlayerInfo {
+        uuid:       uuid.clone(),
+        brand:      brand.clone(),
+        version:    version.clone(),
+        os:         telemetry::get_os_string(),
+        station_id: station_id.clone(),
+        name:       name.clone(),
+        hostname:   telemetry::get_hostname(),
+        mac:        telemetry::get_mac(),
+        insegna:    String::new(),
+        via:        String::new(),
+        citta:      String::new(),
+        referente:  String::new(),
+        email:      String::new(),
+        telefono:   String::new(),
+        password:   String::new(),
+    };
+    if let Ok(mut g) = state.info.lock() { *g = Some(info); }
+    telemetry::start_heartbeat(
+        state.info.clone(),
+        state.audio_state.clone(),
+        state.hb_handle.clone(),
+    );
+    Ok(())
+}
+
+#[tauri::command]
+async fn get_system_info() -> serde_json::Value {
+    serde_json::json!({
+        "hostname": telemetry::get_hostname(),
+        "mac":      telemetry::get_mac(),
+        "os":       telemetry::get_os_string(),
+    })
+}
+
 #[tauri::command]
 async fn telemetry_register(
     state:      tauri::State<'_, TelemetryState>,
@@ -34,13 +80,31 @@ async fn telemetry_register(
     brand:      String,
     version:    String,
     station_id: String,
+    name:       String,
+    password:   String,
+    insegna:    String,
+    via:        String,
+    citta:      String,
+    referente:  String,
+    email:      String,
+    telefono:   String,
 ) -> Result<String, String> {
     let info = telemetry::PlayerInfo {
         uuid:       uuid.clone(),
         brand:      brand.clone(),
         version:    version.clone(),
-        os:         std::env::consts::OS.to_string(),
+        os:         telemetry::get_os_string(),
         station_id: station_id.clone(),
+        name:       name.clone(),
+        hostname:   telemetry::get_hostname(),
+        mac:        telemetry::get_mac(),
+        insegna:    insegna.clone(),
+        via:        via.clone(),
+        citta:      citta.clone(),
+        referente:  referente.clone(),
+        email:      email.clone(),
+        telefono:   telefono.clone(),
+        password:   password.clone(),
     };
     let result = telemetry::do_register(&info).await;
     if let Ok(mut g) = state.info.lock() { *g = Some(info); }
@@ -120,6 +184,8 @@ fn main() {
             artwork::save_brand_fallback,
             artwork::get_brand_fallback,
             // telemetria
+            get_system_info,
+            telemetry_init,
             telemetry_register,
             send_event,
             telemetry_health,

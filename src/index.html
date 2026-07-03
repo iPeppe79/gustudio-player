@@ -9,16 +9,18 @@
 <body>
   <div id="app">
 
-    <!-- Header -->
+    <!-- Header: traffic buttons sinistra, logo centro, gear destra -->
     <div class="header" data-tauri-drag-region>
       <div class="header-left">
         <button class="traffic-btn close-btn" id="btnClose" title="Chiudi"></button>
         <button class="traffic-btn mini-btn"  id="btnMini"  title="Minimizza"></button>
-        <button class="icon-btn" id="btnSettings" title="Impostazioni">⚙</button>
       </div>
       <div class="header-brand" data-tauri-drag-region>
         <img  id="brandLogo" class="brand-logo" src="" alt="" hidden draggable="false"/>
         <span id="brandName" class="brand-name"></span>
+      </div>
+      <div class="header-right">
+        <button class="icon-btn" id="btnSettings" title="Impostazioni">⚙</button>
       </div>
     </div>
 
@@ -29,17 +31,15 @@
         <span id="fallbackName"></span>
         <span class="live-tag">LIVE STREAM</span>
       </div>
-    </div>
-
-    <!-- Equalizer — sezione propria sotto la cover -->
-    <div class="eq-section">
-      <canvas id="eqCanvas"></canvas>
+      <div class="cover-gradient"></div>
     </div>
 
     <!-- Now playing -->
     <div class="now-playing">
-      <span class="status-dot" id="statusDot"></span>
-      <span class="status-label" id="statusLabel">IN ATTESA</span>
+      <span class="status-badge" id="statusBadge">
+        <span class="status-dot" id="statusDot"></span>
+        <span class="status-label" id="statusLabel">IN ATTESA</span>
+      </span>
     </div>
     <div class="track-title"  id="trackTitle">ON AIR</div>
     <div class="track-artist" id="trackArtist"></div>
@@ -49,14 +49,15 @@
       <button class="btn-play" id="btnPlay">▶</button>
       <button class="btn-stop" id="btnStop">■</button>
       <div class="vol-wrap">
-        <span class="vol-label">VOL</span>
-        <input type="range" id="volSlider" min="0" max="1" step="0.01" value="0.8"/>
+        <span class="vol-icon">🔈</span>
+        <input type="range" id="volSlider" min="0" max="1" step="0.01" value="0.35"/>
+        <span class="vol-icon">🔊</span>
       </div>
     </div>
 
     <!-- ── Settings panel ──────────────────────────────────────────────────────── -->
     <div class="panel" id="settingsPanel" hidden>
-      <div class="panel-header">
+      <div class="panel-header" data-tauri-drag-region>
         <span>Impostazioni</span>
         <button class="panel-close" id="btnSettingsClose">✕</button>
       </div>
@@ -65,6 +66,15 @@
         <label>STREAM URL</label>
         <input type="text" id="streamUrlInput" placeholder="https://..."/>
         <button id="btnSaveSettings">Riconnetti</button>
+
+        <hr/>
+
+        <label>RITARDO TITOLO (ICY delay)</label>
+        <div class="row-pair">
+          <input type="range" id="icyDelaySlider" min="2" max="30" step="1" value="18" style="flex:1"/>
+          <span id="icyDelayLabel" class="mono" style="min-width:36px;text-align:right">18s</span>
+        </div>
+        <span class="hint">Secondi tra metadati ICY e audio reale</span>
 
         <!-- Dev — visibile solo con Ctrl+Shift+D -->
         <div id="devPanel" hidden>
@@ -126,7 +136,7 @@
 
     <!-- ── Log panel ───────────────────────────────────────────────────────────── -->
     <div class="panel log-panel" id="logPanel" hidden>
-      <div class="panel-header">
+      <div class="panel-header" data-tauri-drag-region>
         <span>Log eventi</span>
         <div style="display:flex;gap:8px;align-items:center">
           <button id="btnCopyLogInPanel" style="font-size:10px;padding:4px 8px">Copia</button>
@@ -140,10 +150,32 @@
       </div>
     </div>
 
+    <!-- ── Setup primo avvio ─────────────────────────────────────────────────────── -->
+    <div class="modal-overlay" id="setupModal" hidden>
+      <div class="modal-box" style="padding:0;max-height:440px;width:272px">
+        <div class="modal-header" style="padding:10px 14px" data-tauri-drag-region>
+          <span>Registra postazione</span>
+        </div>
+        <div class="modal-body" id="setupBody" style="font-family:inherit;color:var(--text);font-size:12px;line-height:1.5;padding:10px 14px;display:flex;flex-direction:column;gap:6px">
+          <input type="text"     id="setupInsegna"   placeholder="Insegna *"           class="setup-input"/>
+          <input type="text"     id="setupVia"        placeholder="Via"                  class="setup-input"/>
+          <input type="text"     id="setupCitta"      placeholder="Città"                class="setup-input"/>
+          <input type="text"     id="setupReferente"  placeholder="Referente *"          class="setup-input"/>
+          <input type="email"    id="setupEmail"      placeholder="Email *"              class="setup-input"/>
+          <input type="tel"      id="setupTel"        placeholder="Telefono"             class="setup-input"/>
+          <input type="password" id="setupPassword"   placeholder="Password *"           class="setup-input"/>
+          <span id="setupHostInfo" class="mono" style="font-size:9px;opacity:0.28;line-height:1.4"></span>
+          <span id="setupError" style="color:#E53E2D;font-size:10px;display:none"></span>
+          <button id="btnSetupSave" style="width:100%;padding:9px;background:var(--primary);color:#fff;
+            border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;margin-top:2px">Registra</button>
+        </div>
+      </div>
+    </div>
+
     <!-- ── Health modal ─────────────────────────────────────────────────────────── -->
     <div class="modal-overlay" id="healthModal" hidden>
       <div class="modal-box">
-        <div class="modal-header">
+        <div class="modal-header" data-tauri-drag-region>
           <span>Health check</span>
           <button class="panel-close" id="btnHealthModalClose">✕</button>
         </div>
@@ -154,9 +186,7 @@
   </div>
 
   <audio id="audioEl" preload="none"></audio>
-  <!-- pulsante copia log nascosto (usato da JS) -->
   <button id="btnCopyLog" style="display:none"></button>
-  <span id="installedVersionHidden" style="display:none"></span>
   <script type="module" src="main.js"></script>
 </body>
 </html>

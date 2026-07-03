@@ -29,6 +29,9 @@ sha2 = "0.10"
 hex = "0.4"
 dirs = "5"
 urlencoding = "2"
+hostname = "0.4"
+mac_address = "1.1"
+os_info = "3"
 
 [profile.release]
 panic = "abort"

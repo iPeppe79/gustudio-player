@@ -6,8 +6,8 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 /* global __BRAND__, __BUILD_MODE__ */
 const COMPILED_BRAND = __BRAND__;
 const IS_DEV_BUILD   = __BUILD_MODE__ === 'dev';
-const VERSION        = '0.1.0';
-const ICY_DELAY_MS   = 5000;
+const VERSION      = '0.1.0';
+let   ICY_DELAY_MS = parseInt(localStorage.getItem('icy_delay_ms') || '18000', 10);
 
 // Sono dentro la webview Tauri solo se __TAURI_INTERNALS__ esiste
 const IS_TAURI = typeof window.__TAURI_INTERNALS__ !== 'undefined';
@@ -36,8 +36,10 @@ function log(msg) {
 function setStatus(cls, label) {
   const d = document.getElementById('statusDot');
   const l = document.getElementById('statusLabel');
+  const b = document.getElementById('statusBadge');
   if (d) d.className   = 'status-dot '+cls;
   if (l) l.textContent = label;
+  if (b) b.className   = 'status-badge '+cls;
 }
 
 // ── Audio ─────────────────────────────────────────────────────────────────────
@@ -57,7 +59,25 @@ async function safeInvoke(cmd, args) {
   return invoke(cmd, args);
 }
 
+// Rate limiter: max 1 evento per tipo ogni N ms, globalmente max 1 req/2s
+const _diagLast = {};
+const _DIAG_THROTTLE = {
+  BUFFERING:      15000,  // max 1 ogni 15s
+  AUDIO_STALL:    15000,
+  AUDIO_RECOVERED: 5000,
+  HEARTBEAT:      60000,
+  default:         2000,
+};
+let _diagLastGlobal = 0;
+const _DIAG_GLOBAL_MIN = 2000; // mai più di 1 req ogni 2s
+
 async function diag(event, opts) {
+  const now = Date.now();
+  const throttle = _DIAG_THROTTLE[event] ?? _DIAG_THROTTLE.default;
+  if (now - (_diagLast[event] || 0) < throttle) return;
+  if (now - _diagLastGlobal < _DIAG_GLOBAL_MIN) return;
+  _diagLast[event]  = now;
+  _diagLastGlobal   = now;
   opts = opts || {};
   try {
     await safeInvoke('send_event', {
@@ -85,6 +105,15 @@ function applyBrand(brand) {
   s.setProperty('--text',        brand.theme.text);
   s.setProperty('--primary-a20', brand.theme.primary+'33');
   s.setProperty('--primary-a60', brand.theme.primary+'99');
+
+  // Colori brand (logo dots) → traffic buttons + neon pulse
+  const colors = brand.colors || [brand.theme.primary];
+  state.brandColors = colors;
+  const closeBtn = document.querySelector('.close-btn');
+  const miniBtn  = document.querySelector('.mini-btn');
+  if (closeBtn) closeBtn.style.background = colors[0] || brand.theme.primary;
+  if (miniBtn)  miniBtn.style.background  = colors[1] || 'rgba(255,255,255,0.25)';
+
   const logoEl = document.getElementById('brandLogo');
   const nameEl = document.getElementById('brandName');
   nameEl.textContent = brand.productName;
@@ -105,22 +134,24 @@ function applyBrand(brand) {
 // ── Play / Stop ───────────────────────────────────────────────────────────────
 function play() {
   if (!state.brand) return;
+  // Setto playing=true PRIMA di audio.play() così l'evento 'playing' trova lo stato corretto
+  state.playing    = true;
+  state.audioPhase = 'buffering';
+  document.getElementById('btnPlay').textContent = '⏸';
+  setStatus('buffering', 'BUFFERING...');
+  showFallbackCover(); // mostra subito la cover fallback mentre aspettiamo ICY
   diag('PLAY_REQUEST', { audioState: 'buffering' });
   audio.src = state.brand.streamUrl; audio.load();
-  audio.play().then(() => {
-    // play() accettato dal browser/webview
-    state.playing = true;
-    document.getElementById('btnPlay').textContent = '⏸';
-    setStatus('buffering','BUFFERING...');
-    safeInvoke('start_icy', { url: state.brand.streamUrl }).catch(e => log('[ICY_ERR] '+e));
-    log('[PLAY_ATTEMPT] '+state.brand.streamUrl);
-  }).catch(e => {
-    // Autoplay bloccato (policy): mostra play fermo, aspetta click utente
-    state.playing = false;
+  audio.play().catch(e => {
+    // Autoplay bloccato
+    state.playing    = false;
+    state.audioPhase = 'stopped';
     document.getElementById('btnPlay').textContent = '▶';
-    setStatus('stopped','Premi ▶ per ascoltare');
-    log('[AUTOPLAY_BLOCKED] '+e.message+' — in attesa click utente');
+    setStatus('stopped', 'Premi ▶ per ascoltare');
+    log('[AUTOPLAY_BLOCKED] '+e.message);
   });
+  safeInvoke('start_icy', { url: state.brand.streamUrl }).catch(e => log('[ICY_ERR] '+e));
+  log('[PLAY_ATTEMPT] '+state.brand.streamUrl);
 }
 
 function stop() {
@@ -128,7 +159,8 @@ function stop() {
   audio.pause(); audio.src = '';
   safeInvoke('stop_icy').catch(()=>{});
   state.playing = false; state.audioPhase = 'stopped';
-  stopEq();
+  document.getElementById('coverWrap') && document.getElementById('coverWrap').classList.remove('playing');
+  stopNeon();
   document.getElementById('btnPlay').textContent = '▶';
   setStatus('stopped','FERMATO');
   diag('STOP_OK', { audioState: 'stopped' });
@@ -182,21 +214,102 @@ async function fetchCover(title, artist) {
 }
 
 // ── Telemetria ────────────────────────────────────────────────────────────────
+function getSetupData() {
+  return {
+    insegna:   (document.getElementById('setupInsegna')  && document.getElementById('setupInsegna').value.trim())   || '',
+    via:       (document.getElementById('setupVia')       && document.getElementById('setupVia').value.trim())       || '',
+    citta:     (document.getElementById('setupCitta')     && document.getElementById('setupCitta').value.trim())     || '',
+    referente: (document.getElementById('setupReferente') && document.getElementById('setupReferente').value.trim()) || '',
+    email:     (document.getElementById('setupEmail')     && document.getElementById('setupEmail').value.trim())     || '',
+    telefono:  (document.getElementById('setupTel')       && document.getElementById('setupTel').value.trim())       || '',
+    password:  (document.getElementById('setupPassword')  && document.getElementById('setupPassword').value)        || '',
+  };
+}
+
 async function doRegister() {
   try {
+    const d = JSON.parse(localStorage.getItem('station_data') || '{}');
     await safeInvoke('telemetry_register', {
-      uuid: uuid, brand: (state.brand && state.brand.brandId) || '',
-      version: VERSION, stationId: (state.brand && state.brand.streamUrl) || '',
+      uuid:      uuid,
+      brand:     (state.brand && state.brand.brandId) || '',
+      version:   VERSION,
+      stationId: (state.brand && state.brand.streamUrl) || '',
+      name:      d.insegna || '',
+      password:  d.password || '',
+      insegna:   d.insegna  || '',
+      via:       d.via      || '',
+      citta:     d.citta    || '',
+      referente: d.referente|| '',
+      email:     d.email    || '',
+      telefono:  d.telefono || '',
     });
     document.getElementById('teleStatusDot').className     = 'status-dot playing';
-    document.getElementById('teleStatusLabel').textContent = 'registrato';
-    log('[TELE_REGISTER] ok');
+    document.getElementById('teleStatusLabel').textContent = 'registrato · '+d.insegna;
+    log('[TELE_REGISTER] ok insegna='+d.insegna);
     diag('APP_START', { audioState: 'stopped' });
   } catch (e) {
     document.getElementById('teleStatusDot').className     = 'status-dot error';
     document.getElementById('teleStatusLabel').textContent = 'non registrato';
     log('[TELE_REGISTER_ERR] '+e);
   }
+}
+
+async function checkFirstRun() {
+  if (localStorage.getItem('station_data')) return;
+  const modal = document.getElementById('setupModal');
+  if (!modal) return;
+  try {
+    const info = await safeInvoke('get_system_info');
+    if (info) {
+      const el = document.getElementById('setupHostInfo');
+      if (el) el.textContent = (info.hostname||'') + ' · ' + (info.mac||'') + ' · ' + (info.os||'');
+    }
+  } catch(e) {}
+  modal.hidden = false;
+  return new Promise(resolve => {
+    document.getElementById('btnSetupSave').addEventListener('click', async () => {
+      const d = getSetupData();
+      const errEl = document.getElementById('setupError');
+      // Validazione campi obbligatori
+      if (!d.insegna || !d.referente || !d.email || !d.password) {
+        errEl.textContent = 'Compila tutti i campi obbligatori (*)';
+        errEl.style.display = 'block';
+        return;
+      }
+      const btn = document.getElementById('btnSetupSave');
+      btn.textContent = 'Verifica in corso…'; btn.disabled = true;
+      errEl.style.display = 'none';
+      try {
+        // Tenta registrazione — il Rust verifica la password lato server
+        await safeInvoke('telemetry_register', {
+          uuid:      uuid,
+          brand:     (state.brand && state.brand.brandId) || '',
+          version:   VERSION,
+          stationId: (state.brand && state.brand.streamUrl) || '',
+          name:      d.insegna,
+          password:  d.password,
+          insegna:   d.insegna,
+          via:       d.via,
+          citta:     d.citta,
+          referente: d.referente,
+          email:     d.email,
+          telefono:  d.telefono,
+        });
+        // Salva solo se il server accetta
+        localStorage.setItem('station_data', JSON.stringify(d));
+        document.getElementById('teleStatusDot').className     = 'status-dot playing';
+        document.getElementById('teleStatusLabel').textContent = 'registrato · '+d.insegna;
+        log('[TELE_REGISTER] ok insegna='+d.insegna);
+        diag('APP_START', { audioState: 'stopped' });
+        modal.hidden = true;
+        resolve();
+      } catch(e) {
+        errEl.textContent = String(e).replace('Error: ','');
+        errEl.style.display = 'block';
+        btn.textContent = 'Registra'; btn.disabled = false;
+      }
+    });
+  });
 }
 
 async function refreshCacheInfo() {
@@ -211,6 +324,30 @@ async function refreshCacheInfo() {
 
 async function copyLog() {
   try { await navigator.clipboard.writeText(state.log.join('\n')); } catch(e) {}
+}
+
+// ── Neon pulse cover — colore via setInterval, respiro via CSS @keyframes ────
+let _neonInterval = null;
+let _neonPhase    = 0;
+
+function startNeon() {
+  if (_neonInterval) return;
+  const colors = (state.brandColors && state.brandColors.length > 0)
+    ? state.brandColors : ['#29ABE2'];
+  _neonPhase = 0;
+  const cw = document.getElementById('coverWrap');
+  if (cw) cw.style.setProperty('--neon-color', colors[0]);
+  _neonInterval = setInterval(() => {
+    _neonPhase = (_neonPhase + 1) % colors.length;
+    const cw2 = document.getElementById('coverWrap');
+    if (cw2) cw2.style.setProperty('--neon-color', colors[_neonPhase]);
+  }, 4000);
+}
+
+function stopNeon() {
+  if (_neonInterval) { clearInterval(_neonInterval); _neonInterval = null; }
+  const cw = document.getElementById('coverWrap');
+  if (cw) cw.style.removeProperty('--neon-color');
 }
 
 // ── Equalizer Web Audio ───────────────────────────────────────────────────────
@@ -256,6 +393,7 @@ function startEq() {
   if (eqRunning) return;
   if (!initEq()) return;
   if (audioCtx.state === 'suspended') audioCtx.resume();
+  _eqZeroFrames = 0;
   eqRunning = true;
   drawEq();
   log('[EQ_START]');
@@ -288,6 +426,19 @@ function fadeOutEq() {
   requestAnimationFrame(step);
 }
 
+let _eqZeroFrames = 0; // conta frame con analyser tutti zero → fallback simulato
+
+function _fakeEqData(out) {
+  // Visualizzatore simulato: onde sinusoidali sfasate per ogni banda
+  const t = performance.now() / 1000;
+  for (let i = 0; i < out.length; i++) {
+    const base = 0.18 + 0.30 * Math.exp(-i / (out.length * 0.4)); // enfasi sui bassi
+    const wave = Math.sin(t * (1.2 + i * 0.15) + i * 0.7) * 0.5 + 0.5;
+    const noise = Math.random() * 0.12;
+    out[i] = Math.min(1, Math.max(0, base * wave + noise)) * 255;
+  }
+}
+
 function drawEq() {
   if (!eqRunning || !analyser) return;
   const canvas = document.getElementById('eqCanvas');
@@ -297,6 +448,16 @@ function drawEq() {
 
   const data = new Uint8Array(analyser.frequencyBinCount);
   analyser.getByteFrequencyData(data);
+
+  // Se l'analyser ritorna tutti zero per troppi frame (WKWebView non espone lo stream
+  // radio al pipeline Web Audio), usa un visualizzatore simulato
+  const allZero = data.every(v => v === 0);
+  if (allZero) {
+    _eqZeroFrames++;
+    if (_eqZeroFrames > 60) _fakeEqData(data); // dopo ~1s usa fake
+  } else {
+    _eqZeroFrames = 0;
+  }
 
   const LERP_UP = 0.45; const LERP_DN = 0.14;
   for (let i = 0; i < smoothBars.length; i++) {
@@ -338,26 +499,29 @@ function renderEqBars(ctx, W, H) {
 
 // ── Audio events ──────────────────────────────────────────────────────────────
 function wireAudioEvents() {
+  const coverWrap = document.getElementById('coverWrap');
+  const setCoverPlaying = v => coverWrap && coverWrap.classList.toggle('playing', v);
+
   audio.addEventListener('playing', () => {
     const wasErr = state.audioPhase==='error' || state.audioPhase==='stall';
     state.audioPhase = 'playing';
     setStatus('playing','IN RIPRODUZIONE');
     const ev = wasErr ? 'AUDIO_RECOVERED' : 'PLAY_START_OK';
     log('['+ev+']'); diag(ev, { audioState:'playing' });
-    startEq();
+    setCoverPlaying(true); startNeon();
   });
   audio.addEventListener('waiting', () => {
     state.audioPhase = 'buffering'; setStatus('buffering','BUFFERING...');
     log('[BUFFERING]'); diag('BUFFERING', { audioState:'buffering', issueType:'rebuffer' });
-    stopEq();
+    setCoverPlaying(false); stopNeon();
   });
   audio.addEventListener('stalled', () => {
-    state.audioPhase = 'stall'; log('[AUDIO_STALL]'); stopEq();
+    state.audioPhase = 'stall'; log('[AUDIO_STALL]'); setCoverPlaying(false); stopNeon();
     diag('AUDIO_STALL', { audioState:'error', issueType:'stall',
       issueNote:'rs='+audio.readyState+' ns='+audio.networkState });
   });
   audio.addEventListener('error', () => {
-    state.audioPhase = 'error'; stopEq();
+    state.audioPhase = 'error'; setCoverPlaying(false); stopNeon();
     const code = audio.error && audio.error.code;
     const msg  = (audio.error && audio.error.message) || 'unknown';
     setStatus('error','ERRORE STREAM'); log('[AUDIO_ERROR] code='+code+' '+msg);
@@ -523,6 +687,19 @@ async function init() {
   document.getElementById('installedVersion').textContent = VERSION;
   document.getElementById('playerUuid').textContent       = uuid;
 
+  // ICY delay slider
+  const icySlider = document.getElementById('icyDelaySlider');
+  const icyLabel  = document.getElementById('icyDelayLabel');
+  if (icySlider) {
+    icySlider.value = ICY_DELAY_MS / 1000;
+    icyLabel.textContent = (ICY_DELAY_MS/1000)+'s';
+    icySlider.addEventListener('input', e => {
+      ICY_DELAY_MS = parseInt(e.target.value) * 1000;
+      icyLabel.textContent = e.target.value+'s';
+      localStorage.setItem('icy_delay_ms', String(ICY_DELAY_MS));
+    });
+  }
+
   log('[INIT] button listeners ok');
 
   // 3. Tauri window API — in blocco separato, non blocca il flusso se fallisce
@@ -565,7 +742,8 @@ async function init() {
           document.getElementById('trackTitle').textContent  = title  || 'ON AIR';
           document.getElementById('trackArtist').textContent = artist || '';
           log('[TRACK_CHANGE] '+raw);
-          diag('TRACK_CHANGE', { audioState:'playing', extra:{title,artist,raw} });
+          const trackLabel = artist ? artist+' — '+title : title;
+          diag('TRACK_CHANGE', { audioState:'playing', issueNote: trackLabel, extra:{title,artist,raw} });
           fetchCover(title, artist);
         }, ICY_DELAY_MS);
       });
@@ -587,7 +765,19 @@ async function init() {
   setBrandSelect(brand.brandId);
   log('[PLAYER_START] brand='+brand.brandId+' mode='+__BUILD_MODE__+' uuid='+uuid);
 
-  // 6. Registrazione telemetria + heartbeat
+  // 6. Init telemetria — AWAITED: tele.info deve essere pronto prima che partano eventi
+  const _sd = JSON.parse(localStorage.getItem('station_data') || '{}');
+  await safeInvoke('telemetry_init', {
+    uuid:      uuid,
+    brand:     brand.brandId,
+    version:   VERSION,
+    stationId: brand.streamUrl || '',
+    name:      _sd.insegna || '',
+  }).catch(e => log('[TELE_INIT_ERR] '+e));
+  diag('APP_START', { audioState: 'stopped' });
+
+  // 7. Setup primo avvio (se non configurato) poi registrazione completa
+  await checkFirstRun();
   doRegister();
   startHeartbeat();
 

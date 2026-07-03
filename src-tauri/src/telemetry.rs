@@ -32,6 +32,35 @@ pub struct PlayerInfo {
     pub version:    String,
     pub os:         String,
     pub station_id: String,
+    pub name:       String,
+    pub hostname:   String,
+    pub mac:        String,
+    pub insegna:    String,
+    pub via:        String,
+    pub citta:      String,
+    pub referente:  String,
+    pub email:      String,
+    pub telefono:   String,
+    pub password:   String,
+}
+
+pub fn get_hostname() -> String {
+    hostname::get()
+        .map(|h| h.to_string_lossy().to_string())
+        .unwrap_or_else(|_| "unknown".to_string())
+}
+
+pub fn get_mac() -> String {
+    mac_address::get_mac_address()
+        .ok()
+        .flatten()
+        .map(|m| m.to_string())
+        .unwrap_or_else(|| "00-00-00-00-00-00".to_string())
+}
+
+pub fn get_os_string() -> String {
+    let info = os_info::get();
+    format!("{} {}", info.os_type(), info.version())
 }
 
 pub struct TelemetryState {
