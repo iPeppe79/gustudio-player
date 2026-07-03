@@ -1,7 +1,7 @@
 {
-  "productName": "GUStudio Player",
+  "productName": "FunSide Radio",
   "version": "0.1.0",
-  "identifier": "it.gustudio.player",
+  "identifier": "it.gustudio.funside",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "GUStudio Player",
+        "title": "FunSide Radio",
         "width": 300,
         "height": 530,
         "resizable": false,
@@ -29,6 +29,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": []
+    "icon": [
+      "icons/funside.icns",
+      "icons/icon.png"
+    ]
   }
 }
