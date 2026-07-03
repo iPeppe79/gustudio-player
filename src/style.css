@@ -19,12 +19,12 @@ html, body {
   user-select: none;
   overflow: hidden;
   width: 300px;
-  height: 490px;
+  height: 460px;
 }
 
 #app {
   width: 300px;
-  height: 490px;
+  height: 460px;
   background: var(--bg);
   border-radius: var(--radius);
   overflow: hidden;
@@ -116,20 +116,17 @@ img {
   pointer-events: none;
 }
 
-/* ── Cover ───────────────────────────────────────────────────────────────────── */
+/* ── Cover — full width, EQ sovrapposto ──────────────────────────────────────── */
 .cover-wrap {
-  width: 240px;
-  height: 240px;
+  width: 300px;
+  height: 270px;
   flex-shrink: 0;
   position: relative;
   background: #111120;
-  border-radius: 10px;
   overflow: hidden;
-  margin: 10px auto 0;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.55);
 }
 #coverImg {
-  width: 240px; height: 240px;
+  width: 300px; height: 270px;
   object-fit: cover;
   display: block;
   -webkit-user-drag: none;
@@ -143,18 +140,20 @@ img {
 }
 .cover-fallback span:first-child {
   font-size: 11px; font-weight: 700;
-  opacity: 0.25; letter-spacing: 1px;
+  opacity: 0.22; letter-spacing: 1px;
   text-transform: uppercase;
 }
 .live-tag {
   font-size: 7px; letter-spacing: 4px;
   color: var(--primary); opacity: 0.4;
 }
-.cover-fallback-img {
-  width: 130px; height: 130px;
-  object-fit: contain;
-  opacity: 0.55;
-  -webkit-user-drag: none;
+
+/* Gradiente scuro in basso sulla cover — sotto l'EQ */
+.cover-gradient {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  height: 80px;
+  background: linear-gradient(to top, rgba(0,0,0,0.82) 0%, transparent 100%);
+  pointer-events: none;
 }
 
 /* ── Now playing ─────────────────────────────────────────────────────────────── */
@@ -213,19 +212,20 @@ img {
   gap: 8px;
 }
 
-/* ── Equalizer ───────────────────────────────────────────────────────────────── */
+/* ── Equalizer — overlay in basso sulla cover ────────────────────────────────── */
 .eq-wrap {
-  flex-shrink: 0;
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
   height: 52px;
-  padding: 0 0 10px;
+  pointer-events: none;
   display: flex;
   align-items: flex-end;
 }
 #eqCanvas {
   width: 300px;
-  height: 42px;
+  height: 52px;
   display: block;
-  opacity: 0.75;
+  opacity: 0.85;
 }
 
 .btn-play {
