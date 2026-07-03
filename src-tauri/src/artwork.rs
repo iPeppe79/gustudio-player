@@ -176,3 +176,76 @@ fn chrono_now() -> String {
     let secs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
     format!("{}", secs)
 }
+
+// ── Cache management ──────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn get_cache_info() -> serde_json::Value {
+    let dir = cache_dir();
+    let mut size_bytes: u64 = 0;
+    let mut file_count: u32 = 0;
+    if let Ok(entries) = fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            if let Ok(meta) = entry.metadata() {
+                if meta.is_file() {
+                    let ext = entry.path().extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("")
+                        .to_lowercase();
+                    if ["jpg","jpeg","png","webp","gif"].contains(&ext.as_str()) {
+                        size_bytes  += meta.len();
+                        file_count  += 1;
+                    }
+                }
+            }
+        }
+    }
+    serde_json::json!({ "size_bytes": size_bytes, "file_count": file_count })
+}
+
+#[tauri::command]
+pub async fn clear_artwork_cache() -> bool {
+    let dir = cache_dir();
+    if !dir.exists() { return true; }
+    // Cancella solo le immagini; preserva cache.json
+    let mut ok = true;
+    if let Ok(entries) = fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let ext = entry.path().extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            if ["jpg","jpeg","png","webp","gif"].contains(&ext.as_str()) {
+                if fs::remove_file(entry.path()).is_err() { ok = false; }
+            }
+        }
+    }
+    // Azzera anche l'indice JSON
+    let _ = fs::write(cache_index_path(), "{}");
+    ok
+}
+
+// ── Brand fallback personalizzato ─────────────────────────────────────────────
+
+fn fallback_dir() -> PathBuf {
+    cache_dir().join("fallbacks")
+}
+
+#[tauri::command]
+pub async fn save_brand_fallback(brand_id: String, data: Vec<u8>, ext: String) -> Option<String> {
+    let dir = fallback_dir();
+    let _ = fs::create_dir_all(&dir);
+    let path = dir.join(format!("{}.{}", brand_id, ext));
+    fs::write(&path, data).ok()?;
+    Some(path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn get_brand_fallback(brand_id: String) -> Option<String> {
+    let dir = fallback_dir();
+    for ext in ["png","jpg","jpeg","webp"] {
+        let p = dir.join(format!("{}.{}", brand_id, ext));
+        if p.exists() { return Some(p.to_string_lossy().to_string()); }
+    }
+    None
+}

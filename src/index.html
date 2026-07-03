@@ -9,27 +9,27 @@
 <body>
   <div id="app">
 
-    <!-- Header -->
-    <div class="header" id="header">
+    <!-- Header — drag region personalizzato -->
+    <div class="header" data-tauri-drag-region>
       <div class="header-left">
         <button class="traffic-btn close-btn" id="btnClose" title="Chiudi"></button>
-        <button class="traffic-btn mini-btn" id="btnMini" title="Minimizza"></button>
-        <button class="icon-btn settings-btn" id="btnSettings" title="Impostazioni">⚙</button>
+        <button class="traffic-btn mini-btn"  id="btnMini"  title="Minimizza"></button>
+        <button class="icon-btn" id="btnSettings" title="Impostazioni">⚙</button>
       </div>
-      <div class="header-logo">
-        <img id="brandLogo" src="" alt="" hidden/>
-        <span id="brandName"></span>
+      <div class="header-brand" data-tauri-drag-region>
+        <!-- Se il logo esiste viene mostrato, altrimenti il testo -->
+        <img  id="brandLogo" class="brand-logo" src="" alt="" hidden/>
+        <span id="brandName" class="brand-name"></span>
       </div>
     </div>
 
-    <!-- Cover -->
+    <!-- Cover (300×300) -->
     <div class="cover-wrap" id="coverWrap">
       <img id="coverImg" src="" alt="cover" hidden/>
       <div class="cover-fallback" id="coverFallback">
         <span id="fallbackName"></span>
         <span class="live-tag">LIVE STREAM</span>
       </div>
-      <canvas id="vizCanvas"></canvas>
     </div>
 
     <!-- Now playing -->
@@ -37,7 +37,7 @@
       <span class="status-dot" id="statusDot"></span>
       <span class="status-label" id="statusLabel">IN ATTESA</span>
     </div>
-    <div class="track-title" id="trackTitle">—</div>
+    <div class="track-title"  id="trackTitle">ON AIR</div>
     <div class="track-artist" id="trackArtist"></div>
 
     <!-- Controls -->
@@ -50,39 +50,83 @@
       </div>
     </div>
 
-    <!-- Update banner (hidden by default) -->
-    <div class="update-banner" id="updateBanner" hidden>
-      <span id="updateText">Aggiornamento disponibile</span>
-      <button id="btnUpdate">Installa</button>
-    </div>
-
-    <!-- Settings panel -->
+    <!-- ── Settings panel ───────────────────────────────────────────────────── -->
     <div class="panel" id="settingsPanel" hidden>
       <div class="panel-header">
         <span>Impostazioni</span>
         <button class="panel-close" id="btnSettingsClose">✕</button>
       </div>
       <div class="panel-body">
-        <label>Brand</label>
-        <select id="brandSelect">
-          <option value="funside">Funside Radio</option>
-          <option value="professione-casa">One Radio</option>
-          <option value="gustracks">GUSTracks</option>
-        </select>
-        <label>Stream URL</label>
-        <input type="text" id="streamUrlInput" placeholder="https://stream2.multi-radio.com/..."/>
-        <button id="btnSaveSettings">Salva</button>
+
+        <!-- Stream URL (visibile, configurabile) -->
+        <label>STREAM URL</label>
+        <input type="text" id="streamUrlInput" placeholder="https://..."/>
+        <button id="btnSaveSettings">Riconnetti</button>
+
+        <!-- Pannello dev — visibile solo con Ctrl+Shift+D -->
+        <div id="devPanel" hidden>
+          <hr/>
+          <label style="color:#E5A820">⚙ DEV — BRAND OVERRIDE</label>
+          <div class="cselect" id="brandSelectWrap">
+            <button class="cselect-btn" id="brandSelectBtn" type="button">
+              <span id="brandSelectLabel">Funside Radio</span>
+              <span class="cselect-arrow">›</span>
+            </button>
+            <ul class="cselect-list" id="brandSelectList" hidden>
+              <li class="cselect-opt" data-value="funside">Funside Radio</li>
+              <li class="cselect-opt" data-value="professione-casa">One Radio</li>
+              <li class="cselect-opt" data-value="gustracks">GUSTracks</li>
+            </ul>
+          </div>
+          <button id="btnSaveBrand">Cambia brand e ricarica</button>
+        </div>
+
         <hr/>
-        <label>Versione installata</label>
+
+        <!-- Logo & Fallback cover -->
+        <label>LOGO BRAND</label>
+        <span id="logoStatus" class="mono hint">—</span>
+        <label>FALLBACK COVER</label>
+        <div class="row-pair">
+          <button id="btnPickFallback">Scegli immagine…</button>
+          <span id="fallbackFileStatus" class="mono hint">—</span>
+        </div>
+        <input type="file" id="fileFallback" accept="image/png,image/jpeg,image/webp" style="display:none"/>
+
+        <hr/>
+
+        <!-- Cache artwork -->
+        <label>CACHE COVER</label>
+        <div class="row-pair">
+          <span id="cacheInfo" class="mono hint">…</span>
+          <button id="btnClearCache">Svuota</button>
+        </div>
+
+        <hr/>
+
+        <!-- Telemetria -->
+        <label>TELEMETRIA</label>
+        <div class="tele-row">
+          <span class="status-dot" id="teleStatusDot"></span>
+          <span id="teleStatusLabel" class="mono hint">non registrato</span>
+        </div>
+        <div class="row-pair">
+          <button id="btnTeleHealth">Controlla health</button>
+          <button id="btnTeleRegister">Ri-registra</button>
+        </div>
+        <pre id="teleResult" class="tele-result"></pre>
+
+        <hr/>
+
+        <!-- Versione & Log -->
+        <label>VERSIONE</label>
         <span id="installedVersion" class="mono">—</span>
-        <button id="btnCheckUpdate">Controlla aggiornamenti</button>
-        <hr/>
         <button id="btnShowLog">Log eventi</button>
         <button id="btnCopyLog">Copia log</button>
       </div>
     </div>
 
-    <!-- Log panel -->
+    <!-- ── Log panel ─────────────────────────────────────────────────────────── -->
     <div class="panel log-panel" id="logPanel" hidden>
       <div class="panel-header">
         <span>Log eventi</span>
@@ -94,13 +138,13 @@
       <div class="log-body" id="logBody"></div>
       <div class="log-footer">
         <span id="playerUuid" class="mono"></span>
-        <span id="brandLabel" class="mono"></span>
+        <span id="brandLabel"  class="mono"></span>
       </div>
     </div>
 
   </div>
 
-  <audio id="audioEl" preload="none" crossorigin="anonymous"></audio>
+  <audio id="audioEl" preload="none"></audio>
   <script type="module" src="main.js"></script>
 </body>
 </html>

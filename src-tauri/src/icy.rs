@@ -67,13 +67,28 @@ async fn icy_connect(app: &AppHandle, url: &str) -> Result<(), String> {
         .unwrap_or(16000);
 
     eprintln!("[ICY] connected to {url}, metaint={metaint}");
-    let mut stream = resp.bytes_stream();
+
+    // ── STREAM_HEADERS: connessione HTTP stabilita ────────────────────────────
+    let _ = app.emit("icy-stream", serde_json::json!({
+        "type": "STREAM_HEADERS", "metaint": metaint
+    }));
+
+    let mut stream        = resp.bytes_stream();
     let mut buf: VecDeque<u8> = VecDeque::new();
-    let mut last_title = String::new();
+    let mut last_title    = String::new();
+    let mut first_chunk   = true;
+    let mut stream_ok_sent = false;
 
     loop {
         // Leggi e scarta metaint byte audio
         fill(&mut stream, &mut buf, metaint).await?;
+
+        // ── STREAM_FIRST_BYTE: primo blocco audio ricevuto ────────────────────
+        if first_chunk {
+            first_chunk = false;
+            let _ = app.emit("icy-stream", serde_json::json!({ "type": "STREAM_FIRST_BYTE" }));
+        }
+
         buf.drain(..metaint);
 
         // 1 byte: lunghezza blocco meta / 16
@@ -90,16 +105,18 @@ async fn icy_connect(app: &AppHandle, url: &str) -> Result<(), String> {
         let meta_str = meta_str.trim_end_matches('\0');
 
         if let Some(stream_title) = extract_title(meta_str) {
+            // ── STREAM_OK: primo metadata valido → stream pienamente operativo ─
+            if !stream_ok_sent {
+                stream_ok_sent = true;
+                let _ = app.emit("icy-stream", serde_json::json!({ "type": "STREAM_OK" }));
+            }
+
             if stream_title == last_title { continue; }
             last_title = stream_title.clone();
             eprintln!("[ICY] title: {stream_title}");
 
             let (artist, title) = split(stream_title.as_str());
-            let _ = app.emit("icy-meta", IcyMeta {
-                raw: stream_title,
-                title,
-                artist,
-            });
+            let _ = app.emit("icy-meta", IcyMeta { raw: stream_title, title, artist });
         }
     }
 }
