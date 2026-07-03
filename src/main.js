@@ -128,6 +128,7 @@ function stop() {
   audio.pause(); audio.src = '';
   safeInvoke('stop_icy').catch(()=>{});
   state.playing = false; state.audioPhase = 'stopped';
+  stopEq();
   document.getElementById('btnPlay').textContent = '▶';
   setStatus('stopped','FERMATO');
   diag('STOP_OK', { audioState: 'stopped' });
@@ -212,6 +213,115 @@ async function copyLog() {
   try { await navigator.clipboard.writeText(state.log.join('\n')); } catch(e) {}
 }
 
+// ── Equalizer Web Audio ───────────────────────────────────────────────────────
+let audioCtx   = null;
+let analyser   = null;
+let eqRunning  = false;
+// Barre smussate con lerp (evita salti bruschi)
+let smoothBars = null;
+
+function initEq() {
+  if (analyser) return true; // già inizializzato
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = audioCtx.createMediaElementSource(audio);
+    analyser  = audioCtx.createAnalyser();
+    analyser.fftSize       = 64;   // 32 bin → visivamente sufficienti
+    analyser.smoothingTimeConstant = 0.8;
+    src.connect(analyser);
+    analyser.connect(audioCtx.destination);
+    smoothBars = new Float32Array(analyser.frequencyBinCount).fill(0);
+    return true;
+  } catch (e) {
+    log('[EQ_INIT_ERR] '+e.message);
+    analyser = null;
+    return false;
+  }
+}
+
+function startEq() {
+  if (eqRunning) return;
+  if (!initEq()) return;
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  eqRunning = true;
+  drawEq();
+}
+
+function stopEq() {
+  eqRunning = false;
+  // Svuota il canvas con fade-out graduale
+  fadeOutEq();
+}
+
+function fadeOutEq() {
+  const canvas = document.getElementById('eqCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width; const H = canvas.height;
+  let fade = 0;
+  function step() {
+    if (eqRunning) return; // ripartito
+    fade++;
+    const factor = Math.max(0, 1 - fade * 0.08);
+    if (!smoothBars) return;
+    for (let i = 0; i < smoothBars.length; i++) smoothBars[i] *= factor;
+    renderEqBars(ctx, W, H);
+    if (factor > 0.01) requestAnimationFrame(step);
+    else { ctx.clearRect(0,0,W,H); }
+  }
+  requestAnimationFrame(step);
+}
+
+function drawEq() {
+  if (!eqRunning || !analyser) return;
+  const canvas = document.getElementById('eqCanvas');
+  if (!canvas) { eqRunning = false; return; }
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width; const H = canvas.height;
+
+  const data = new Uint8Array(analyser.frequencyBinCount);
+  analyser.getByteFrequencyData(data);
+
+  // Lerp verso i valori reali
+  const LERP = 0.18;
+  for (let i = 0; i < smoothBars.length; i++) {
+    const target = data[i] / 255;
+    smoothBars[i] += (target - smoothBars[i]) * (target > smoothBars[i] ? LERP * 2.5 : LERP);
+  }
+
+  renderEqBars(ctx, W, H);
+  requestAnimationFrame(drawEq);
+}
+
+function renderEqBars(ctx, W, H) {
+  ctx.clearRect(0, 0, W, H);
+  if (!smoothBars) return;
+
+  // Leggi il colore primario dal CSS
+  const primary = getComputedStyle(document.documentElement)
+    .getPropertyValue('--primary').trim() || '#29ABE2';
+
+  const BAR_COUNT = smoothBars.length; // 32
+  const GAP  = 2;
+  const barW = (W - GAP * (BAR_COUNT - 1)) / BAR_COUNT;
+
+  for (let i = 0; i < BAR_COUNT; i++) {
+    const v   = smoothBars[i];
+    const bH  = Math.max(2, v * H);
+    const x   = i * (barW + GAP);
+    const y   = H - bH;
+
+    // Gradiente verticale per ogni barra
+    const grad = ctx.createLinearGradient(0, y, 0, H);
+    grad.addColorStop(0,   primary + 'CC');
+    grad.addColorStop(1,   primary + '44');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.roundRect(x, y, barW, bH, [2, 2, 0, 0]);
+    ctx.fill();
+  }
+}
+
 // ── Audio events ──────────────────────────────────────────────────────────────
 function wireAudioEvents() {
   audio.addEventListener('playing', () => {
@@ -220,18 +330,20 @@ function wireAudioEvents() {
     setStatus('playing','IN RIPRODUZIONE');
     const ev = wasErr ? 'AUDIO_RECOVERED' : 'PLAY_START_OK';
     log('['+ev+']'); diag(ev, { audioState:'playing' });
+    startEq();
   });
   audio.addEventListener('waiting', () => {
     state.audioPhase = 'buffering'; setStatus('buffering','BUFFERING...');
     log('[BUFFERING]'); diag('BUFFERING', { audioState:'buffering', issueType:'rebuffer' });
+    stopEq();
   });
   audio.addEventListener('stalled', () => {
-    state.audioPhase = 'stall'; log('[AUDIO_STALL]');
+    state.audioPhase = 'stall'; log('[AUDIO_STALL]'); stopEq();
     diag('AUDIO_STALL', { audioState:'error', issueType:'stall',
       issueNote:'rs='+audio.readyState+' ns='+audio.networkState });
   });
   audio.addEventListener('error', () => {
-    state.audioPhase = 'error';
+    state.audioPhase = 'error'; stopEq();
     const code = audio.error && audio.error.code;
     const msg  = (audio.error && audio.error.message) || 'unknown';
     setStatus('error','ERRORE STREAM'); log('[AUDIO_ERROR] code='+code+' '+msg);

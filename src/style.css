@@ -19,12 +19,12 @@ html, body {
   user-select: none;
   overflow: hidden;
   width: 300px;
-  height: 440px;
+  height: 490px;
 }
 
 #app {
   width: 300px;
-  height: 440px;
+  height: 490px;
   background: var(--bg);
   border-radius: var(--radius);
   overflow: hidden;
@@ -118,18 +118,18 @@ img {
 
 /* ── Cover ───────────────────────────────────────────────────────────────────── */
 .cover-wrap {
-  width: 260px;
-  height: 260px;
+  width: 240px;
+  height: 240px;
   flex-shrink: 0;
   position: relative;
   background: #111120;
   border-radius: 10px;
   overflow: hidden;
-  margin: 12px auto 0;
+  margin: 10px auto 0;
   box-shadow: 0 8px 32px rgba(0,0,0,0.55);
 }
 #coverImg {
-  width: 260px; height: 260px;
+  width: 240px; height: 240px;
   object-fit: cover;
   display: block;
   -webkit-user-drag: none;
@@ -211,6 +211,21 @@ img {
   border-top: 1px solid rgba(255,255,255,0.04);
   flex-shrink: 0;
   gap: 8px;
+}
+
+/* ── Equalizer ───────────────────────────────────────────────────────────────── */
+.eq-wrap {
+  flex-shrink: 0;
+  height: 52px;
+  padding: 0 0 10px;
+  display: flex;
+  align-items: flex-end;
+}
+#eqCanvas {
+  width: 300px;
+  height: 42px;
+  display: block;
+  opacity: 0.75;
 }
 
 .btn-play {
