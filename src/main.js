@@ -377,11 +377,18 @@ async function init() {
     document.getElementById('cacheInfo').textContent = '0 file · 0.0 MB'; log('[CACHE_CLEARED]');
   });
   document.getElementById('btnTeleRegister').addEventListener('click', doRegister);
+  const healthModal = document.getElementById('healthModal');
+  const healthResult = document.getElementById('healthResult');
   document.getElementById('btnTeleHealth').addEventListener('click', async () => {
+    healthResult.textContent = '…';
+    healthModal.hidden = false;
     try {
       const res = await safeInvoke('telemetry_health');
-      document.getElementById('teleResult').textContent = 'HTTP '+res.status+'\n'+(res.body||'').slice(0,200);
-    } catch (e) { document.getElementById('teleResult').textContent = String(e); }
+      healthResult.textContent = 'HTTP '+res.status+'\n\n'+(res.body||'');
+    } catch (e) { healthResult.textContent = String(e); }
+  });
+  document.getElementById('btnHealthModalClose').addEventListener('click', () => {
+    healthModal.hidden = true;
   });
   document.getElementById('btnShowLog').addEventListener('click', () => { settingsPanel.hidden=true; logPanel.hidden=false; });
   document.getElementById('btnLogClose').addEventListener('click', () => { logPanel.hidden=true; });
