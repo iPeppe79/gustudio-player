@@ -8,5 +8,6 @@
     "background": "#0A0A14",
     "text": "#E8F4FB"
   },
-  "logoHeight": 44
+  "logoHeight": 44,
+  "fallbackCover": "/funside-cover.png"
 }

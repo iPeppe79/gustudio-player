@@ -137,11 +137,23 @@ function stop() {
 function showFallbackCover() {
   const img = document.getElementById('coverImg');
   const fb  = document.getElementById('coverFallback');
-  const fp  = brandFallbacks[state.brand && state.brand.brandId];
+  // 1. Fallback da disco (scelto dall'utente via UI)
+  const fp = brandFallbacks[state.brand && state.brand.brandId];
   if (fp && IS_TAURI) {
     img.onload  = () => { img.hidden=false; fb.style.display='none'; };
-    img.onerror = () => { img.hidden=true;  fb.style.display=''; };
+    img.onerror = () => { tryBrandFallbackCover(img, fb); };
     img.src = convertFileSrc(fp); return;
+  }
+  // 2. Fallback bundled nel brand JSON (es. /funside-cover.png)
+  tryBrandFallbackCover(img, fb);
+}
+
+function tryBrandFallbackCover(img, fb) {
+  const bundled = state.brand && state.brand.fallbackCover;
+  if (bundled) {
+    img.onload  = () => { img.hidden=false; fb.style.display='none'; };
+    img.onerror = () => { img.hidden=true;  fb.style.display=''; };
+    img.src = bundled; return;
   }
   img.hidden=true; fb.style.display='';
 }
