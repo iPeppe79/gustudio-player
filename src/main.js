@@ -21,6 +21,12 @@ const sessionId = crypto.randomUUID(); // nuovo ad ogni avvio
 
 const brandFallbacks = JSON.parse(localStorage.getItem('brandFallbacks') || '{}');
 
+// Estrae il mount name dall'URL stream (es. "funsidelatina" da "https://.../funsidelatina")
+function streamToStationId(url) {
+  try { return new URL(url).pathname.replace(/^\//, '').split('/')[0] || url; }
+  catch { return url; }
+}
+
 const state = {
   brand: null, playing: false, currentTitle: '', currentArtist: '',
   audioPhase: 'stopped', networkOnline: navigator.onLine, devMode: false, log: [],
@@ -245,7 +251,7 @@ async function doRegister() {
       uuid:      uuid,
       brand:     (state.brand && state.brand.brandId) || '',
       version:   VERSION,
-      stationId: (state.brand && state.brand.streamUrl) || '',
+      stationId: streamToStationId((state.brand && state.brand.streamUrl) || ''),
       name:      d.insegna || '',
       password:  d.password || '',
       insegna:   d.insegna  || '',
@@ -297,7 +303,7 @@ async function checkFirstRun() {
           uuid:      uuid,
           brand:     (state.brand && state.brand.brandId) || '',
           version:   VERSION,
-          stationId: (state.brand && state.brand.streamUrl) || '',
+          stationId: streamToStationId((state.brand && state.brand.streamUrl) || ''),
           name:      d.insegna,
           password:  d.password,
           insegna:   d.insegna,
@@ -836,7 +842,7 @@ async function init() {
     uuid:      uuid,
     brand:     brand.brandId,
     version:   VERSION,
-    stationId: brand.streamUrl || '',
+    stationId: streamToStationId(brand.streamUrl || ''),
     name:      _sd.insegna || '',
   }).catch(e => log('[TELE_INIT_ERR] '+e));
   await safeInvoke('set_session_id', { sessionId }).catch(()=>{});
