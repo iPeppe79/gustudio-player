@@ -148,11 +148,78 @@ src-tauri/src/icy.rs       — lettore ICY metadata (Rust)
 
 ---
 
-## STATO DEBUG
-- **2026-07-03**: Player Tauri funzionante. Audio ✓, ICY metadata ✓, cover ✓,
-  telemetria ✓ (log arrivano al server), setup modal ✓, neon ring ✓ (CSS),
-  crash macOS 26 risolto (rimosso RAF), drag finestra da tutti gli header ✓.
-- **Da fare**: (1) registrazione con dati reali (resettata per test — station_data
-  cancellato), (2) build per One Radio / GUSTracks, (3) CI GitHub Actions multi-brand.
-- **Postazione test nel server panel**: "As" / UUID 158c334f-b996-4614-b391-e10f4360d82a
-  (dati fittizi, da ri-registrare con dati veri).
+## STATO DEBUG — 2026-07-04
+
+### Funzionante ✓
+- Audio, ICY metadata, cover, setup modal, neon ring (CSS), drag finestra
+- Crash macOS 26 risolto (rimosso RAF)
+- Watchdog auto-reconnect con backoff esponenziale (5s→10s→20s→40s)
+- Registrazione postazione → HTTP 200 ✓
+- Eventi health → HTTP 200 ✓ (`Ultima connessione` nel panel si aggiorna)
+
+### BUG APERTO — log eventi non appaiono nel server panel
+**Postazione test**: "FUNSIDE TEST PEPPE" / UUID `158c334f-b996-4614-b391-e10f4360d82a`
+
+**Sintomo**: eventi inviati al server (`/api/player-health`), HTTP 200 confermato,
+`Ultima connessione` aggiornata, ma sezione "Log eventi" nel panel è vuota.
+
+**Cosa sappiamo**:
+- Il vecchio player .NET/BASS (v01.2595) mostra log completi nel panel
+- Il vecchio player usa schema v2 con campi camelCase (`clientId`, `stationId`, `brandId`, `sessionId`, `playbackState`, `audioEngine`, `schemaVersion:2`)
+- Il nuovo player usa snake_case + campo `uuid` invece di `clientId`
+- Il server risponde 400 se mancano `uuid` e `event` → li richiede entrambi
+- Il server accetta payload con ENTRAMBI uuid + clientId (HTTP 200)
+- Non sappiamo quale campo il server usa per mostrare eventi nel log panel
+
+**Payload attuale inviato (schema ibrido, build 2026-07-04)**:
+```json
+{
+  "schemaVersion": 2,
+  "clientId": "UUID",    ← aggiunto
+  "sessionId": "...",    ← aggiunto
+  "stationId": "...",    ← camelCase
+  "brandId": "funside",  ← aggiunto
+  "event": "APP_START",
+  "playbackState": "stopped",
+  "audioEngine": "mpv",
+  "os": "macos",
+  "osVersion": "...",
+  "architecture": "aarch64",
+  "appVersion": "0.1.0",
+  "ts": 1751622000
+}
+```
+NOTA: `uuid` non è nel payload attuale dopo il refactor → server risponde 400!
+**FIX IMMEDIATO NECESSARIO**: aggiungere `uuid` al payload (richiesto dal server).
+
+**Report per il gestore del server**: vedi sezione sotto.
+
+---
+
+## DOMANDE PER IL GESTORE DEL SERVER
+
+Per far apparire gli eventi nel "Log eventi" del panel, serve sapere:
+
+1. **Quali campi usa il server per abbinare un evento a una postazione?**
+   - Solo `uuid`? Solo `clientId`? Entrambi?
+2. **Quali campi usa per mostrare l'evento nel log?**
+   - Che campi devono esserci per una riga nel log (es. `event`, `stationId`, `playbackState`)?
+3. **C'è una differenza tra endpoint heartbeat e endpoint eventi?**
+   - Il vecchio player aveva `HealthEndpoint` e un separato `EventsEndpoint` (non ancora live in v2)
+4. **Il vecchio player v01.2595 mandava `uuid` o `clientId`?**
+   - Dal sorgente v2 (build 2596) usa `clientId`. Il v01.2595 potrebbe usare `uuid`.
+5. **Cosa triggera una riga nel log — solo `TRACK_CHANGE`/`CHANNEL_PLAY_OK` o anche `APP_START`?**
+
+**Payload minimo che funzionerebbe** (da confermare):
+```json
+{ "uuid": "...", "event": "APP_START", "station_id": "..." }
+```
+vs quello che manda il vecchio player (da verificare con Wireshark/Charles sul vecchio .app).
+
+---
+
+## Da fare
+1. **FIX urgente**: riaggungere `uuid` nel EventPayload in telemetry.rs
+2. Build One Radio / GUSTracks
+3. CI GitHub Actions multi-brand
+4. Ri-registrare "FUNSIDE TEST PEPPE" con dati reali

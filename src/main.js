@@ -12,11 +12,12 @@ let   ICY_DELAY_MS = parseInt(localStorage.getItem('icy_delay_ms') || '18000', 1
 // Sono dentro la webview Tauri solo se __TAURI_INTERNALS__ esiste
 const IS_TAURI = typeof window.__TAURI_INTERNALS__ !== 'undefined';
 
-const uuid = (() => {
+const uuid      = (() => {
   let id = localStorage.getItem('player_uuid');
   if (!id) { id = crypto.randomUUID(); localStorage.setItem('player_uuid', id); }
   return id;
 })();
+const sessionId = crypto.randomUUID(); // nuovo ad ogni avvio
 
 const brandFallbacks = JSON.parse(localStorage.getItem('brandFallbacks') || '{}');
 
@@ -71,24 +72,26 @@ const _DIAG_THROTTLE = {
   default:         2000,
 };
 let _diagLastGlobal = 0;
-const _DIAG_GLOBAL_MIN = 2000; // mai più di 1 req ogni 2s
+const _DIAG_GLOBAL_MIN = 500; // protezione anti-burst, i throttle per-evento gestiscono la frequenza
 
 async function diag(event, opts) {
   const now = Date.now();
   const throttle = _DIAG_THROTTLE[event] ?? _DIAG_THROTTLE.default;
-  if (now - (_diagLast[event] || 0) < throttle) return;
-  if (now - _diagLastGlobal < _DIAG_GLOBAL_MIN) return;
+  if (now - (_diagLast[event] || 0) < throttle) { log('[DIAG_SKIP_THROTTLE] '+event); return; }
+  if (now - _diagLastGlobal < _DIAG_GLOBAL_MIN) { log('[DIAG_SKIP_GLOBAL] '+event+' gap='+(now-_diagLastGlobal)+'ms'); return; }
   _diagLast[event]  = now;
   _diagLastGlobal   = now;
   opts = opts || {};
+  log('[DIAG_SEND] '+event);
   try {
-    await safeInvoke('send_event', {
+    const status = await safeInvoke('send_event', {
       event:      event,
       audioState: opts.audioState != null ? opts.audioState : getAudioState(),
       issueType:  opts.issueType  || null,
       issueNote:  opts.issueNote  || null,
       extra:      opts.extra      || null,
     });
+    log('[DIAG_OK] '+event+' HTTP='+status);
   } catch (e) { log('[DIAG_ERR] '+event+': '+e); }
 }
 
@@ -803,6 +806,9 @@ async function init() {
           log('[TRACK_CHANGE] '+raw);
           const trackLabel = artist ? artist+' — '+title : title;
           diag('TRACK_CHANGE', { audioState:'playing', issueNote: trackLabel, extra:{title,artist,raw} });
+          safeInvoke('send_track_change', {
+            sessionId, artist: artist||null, title: title||null, rawTitle: raw||null,
+          }).then(s => log('[TRACK_CHANGE_V2] HTTP='+s)).catch(()=>{});
           fetchCover(title, artist);
         }, ICY_DELAY_MS);
       });
@@ -833,6 +839,7 @@ async function init() {
     stationId: brand.streamUrl || '',
     name:      _sd.insegna || '',
   }).catch(e => log('[TELE_INIT_ERR] '+e));
+  await safeInvoke('set_session_id', { sessionId }).catch(()=>{});
   diag('APP_START', { audioState: 'stopped' });
 
   // 7. Setup primo avvio (se non configurato) poi registrazione completa

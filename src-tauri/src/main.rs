@@ -27,6 +27,15 @@ async fn stop_icy(state: tauri::State<'_, IcyState>) -> Result<(), ()> {
 
 // ── Telemetria ────────────────────────────────────────────────────────────────
 
+#[tauri::command]
+async fn set_session_id(
+    state:      tauri::State<'_, TelemetryState>,
+    session_id: String,
+) -> Result<(), ()> {
+    if let Ok(mut g) = state.session_id.lock() { *g = session_id; }
+    Ok(())
+}
+
 /// Inizializzazione minima all'avvio: popola state.info con dati base
 /// così send_event funziona subito, anche prima della registrazione completa.
 #[tauri::command]
@@ -59,6 +68,7 @@ async fn telemetry_init(
     telemetry::start_heartbeat(
         state.info.clone(),
         state.audio_state.clone(),
+        state.session_id.clone(),
         state.hb_handle.clone(),
     );
     Ok(())
@@ -111,12 +121,33 @@ async fn telemetry_register(
     telemetry::start_heartbeat(
         state.info.clone(),
         state.audio_state.clone(),
+        state.session_id.clone(),
         state.hb_handle.clone(),
     );
     result
 }
 
-/// Evento diagnostico generico — payload verificato col server
+#[tauri::command]
+async fn send_track_change(
+    tele:      tauri::State<'_, TelemetryState>,
+    session_id: String,
+    artist:    Option<String>,
+    title:     Option<String>,
+    raw_title: Option<String>,
+) -> Result<u16, ()> {
+    let triplet = tele.info.lock().ok().and_then(|g| {
+        g.as_ref().map(|i| (i.uuid.clone(), i.station_id.clone(), i.brand.clone()))
+    });
+    if let Some((uuid, station_id, brand_id)) = triplet {
+        let status = telemetry::post_track_change(
+            uuid, session_id, station_id, brand_id, artist, title, raw_title,
+        ).await;
+        return Ok(status);
+    }
+    Ok(0)
+}
+
+/// Evento diagnostico generico
 #[tauri::command]
 async fn send_event(
     tele:        tauri::State<'_, TelemetryState>,
@@ -125,23 +156,24 @@ async fn send_event(
     issue_type:  Option<String>,
     issue_note:  Option<String>,
     extra:       Option<serde_json::Value>,
-) -> Result<(), ()> {
-    // Aggiorna audio_state condiviso (usato dall'heartbeat)
+) -> Result<u16, ()> {
     if let Some(ref s) = audio_state {
         if let Ok(mut g) = tele.audio_state.lock() { *g = s.clone(); }
     }
 
-    let triplet = tele.info.lock().ok().and_then(|g| {
-        g.as_ref().map(|i| (i.uuid.clone(), i.station_id.clone(), i.version.clone()))
+    let quad = tele.info.lock().ok().and_then(|g| {
+        g.as_ref().map(|i| (i.uuid.clone(), i.station_id.clone(), i.brand.clone(), i.version.clone()))
     });
+    let sid = tele.session_id.lock().ok().map(|g| g.clone()).unwrap_or_default();
 
-    if let Some((uuid, station_id, version)) = triplet {
-        tokio::spawn(telemetry::post_event(
-            uuid, event, station_id,
+    if let Some((uuid, station_id, brand_id, version)) = quad {
+        let status = telemetry::post_event(
+            uuid, sid, event, station_id, brand_id,
             audio_state, issue_type, issue_note, version, extra,
-        ));
+        ).await;
+        return Ok(status);
     }
-    Ok(())
+    Ok(0)
 }
 
 #[tauri::command]
@@ -185,9 +217,11 @@ fn main() {
             artwork::get_brand_fallback,
             // telemetria
             get_system_info,
+            set_session_id,
             telemetry_init,
             telemetry_register,
             send_event,
+            send_track_change,
             telemetry_health,
         ])
         .run(tauri::generate_context!())

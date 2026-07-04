@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 use serde::Serialize;
 use tokio::task::JoinHandle;
 use tokio::time::Duration;
+use chrono::Utc;
 
 const BASE: &str = "https://gus79.it/api";
 
@@ -67,6 +68,7 @@ pub struct TelemetryState {
     pub info:        Arc<Mutex<Option<PlayerInfo>>>,
     pub hb_handle:   Arc<Mutex<Option<JoinHandle<()>>>>,
     pub audio_state: Arc<Mutex<String>>,
+    pub session_id:  Arc<Mutex<String>>,
 }
 
 impl TelemetryState {
@@ -75,53 +77,122 @@ impl TelemetryState {
             info:        Arc::new(Mutex::new(None)),
             hb_handle:   Arc::new(Mutex::new(None)),
             audio_state: Arc::new(Mutex::new("stopped".to_string())),
+            session_id:  Arc::new(Mutex::new(String::new())),
         }
     }
 }
 
-// Payload canonico verificato con il server
+// Payload evento — schema v2, mantiene uuid (obbligatorio server) + campi camelCase v2
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct EventPayload {
-    uuid:         String,
-    event:        String,
-    station_id:   String,
+    uuid:           String,    // obbligatorio dal server
+    schema_version: u8,        // schemaVersion: 2
+    client_id:      String,    // clientId (alias uuid per schema v2)
+    session_id:     String,    // sessionId
+    station_id:     String,    // stationId
+    brand_id:       String,    // brandId
+    event:          String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    audio_state:  Option<String>,
+    playback_state: Option<String>,  // playbackState
     #[serde(skip_serializing_if = "Option::is_none")]
-    issue_type:   Option<String>,
+    issue_type:     Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    issue_note:   Option<String>,
-    os:           String,
-    architecture: String,
-    version:      String,
-    ts:           u64,
+    issue_note:     Option<String>,
+    os:             String,
+    os_version:     String,    // osVersion
+    architecture:   String,
+    app_version:    String,    // appVersion
+    audio_engine:   String,    // audioEngine
+    ts:             u64,
     #[serde(skip_serializing_if = "Option::is_none")]
-    extra:        Option<serde_json::Value>,
+    extra:          Option<serde_json::Value>,
 }
 
 // ── Funzioni di invio ─────────────────────────────────────────────────────────
 
 pub async fn post_event(
     uuid:        String,
+    session_id:  String,
     event:       String,
     station_id:  String,
+    brand_id:    String,
     audio_state: Option<String>,
     issue_type:  Option<String>,
     issue_note:  Option<String>,
     version:     String,
     extra:       Option<serde_json::Value>,
-) {
+) -> u16 {
     let url     = format!("{}/player-health?api_key={}", BASE, api_key());
+    let os_info = os_info::get();
     let payload = EventPayload {
-        uuid, event, station_id,
-        audio_state, issue_type, issue_note,
+        uuid:       uuid.clone(),
+        schema_version: 2,
+        client_id:  uuid,
+        session_id,
+        station_id,
+        brand_id,
+        event,
+        playback_state: audio_state,
+        issue_type,
+        issue_note,
         os:           std::env::consts::OS.to_string(),
+        os_version:   format!("{} {}", os_info.os_type(), os_info.version()),
         architecture: std::env::consts::ARCH.to_string(),
-        version,
+        app_version:  version,
+        audio_engine: "mpv".to_string(),
         ts:           now_secs(),
         extra,
     };
-    let _ = client().post(&url).json(&payload).send().await;
+    match client().post(&url).json(&payload).send().await {
+        Ok(resp) => resp.status().as_u16(),
+        Err(_)   => 0,
+    }
+}
+
+// Payload track change compatibile schema v2
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TrackChangePayload {
+    schema_version: u8,
+    client_id:      String,
+    session_id:     String,
+    station_id:     String,
+    brand_id:       String,
+    artist:         Option<String>,
+    title:          Option<String>,
+    raw_title:      Option<String>,
+    is_spot:        bool,
+    track_change_time: String,
+}
+
+pub async fn post_track_change(
+    uuid:       String,
+    session_id: String,
+    station_id: String,
+    brand_id:   String,
+    artist:     Option<String>,
+    title:      Option<String>,
+    raw_title:  Option<String>,
+) -> u16 {
+    let url = format!("{}/player-health?api_key={}", BASE, api_key());
+    let now = Utc::now().to_rfc3339();
+    let payload = TrackChangePayload {
+        schema_version: 2,
+        client_id:  uuid,
+        session_id,
+        station_id,
+        brand_id,
+        artist,
+        title,
+        raw_title,
+        is_spot: false,
+        track_change_time: now,
+    };
+    match client().post(&url).json(&payload).send().await {
+        Ok(resp) => resp.status().as_u16(),
+        Err(_)   => 0,
+    }
 }
 
 pub async fn do_register(info: &PlayerInfo) -> Result<String, String> {
@@ -137,6 +208,7 @@ pub async fn do_register(info: &PlayerInfo) -> Result<String, String> {
 pub fn start_heartbeat(
     info:        Arc<Mutex<Option<PlayerInfo>>>,
     audio_state: Arc<Mutex<String>>,
+    session_id:  Arc<Mutex<String>>,
     hb_handle:   Arc<Mutex<Option<JoinHandle<()>>>>,
 ) {
     if let Ok(mut g) = hb_handle.lock() {
@@ -147,18 +219,21 @@ pub fn start_heartbeat(
         loop {
             tokio::time::sleep(Duration::from_secs(60)).await;
 
-            let pair = info.lock().ok()
+            let quad = info.lock().ok()
                 .and_then(|g| g.as_ref().map(|i| (
-                    i.uuid.clone(), i.station_id.clone(), i.version.clone(),
+                    i.uuid.clone(), i.station_id.clone(), i.brand.clone(), i.version.clone(),
                 )));
 
-            if let Some((uuid, station_id, version)) = pair {
+            if let Some((uuid, station_id, brand_id, version)) = quad {
                 let astate = audio_state.lock().ok()
                     .map(|g| g.clone())
                     .unwrap_or_else(|| "unknown".to_string());
+                let sid = session_id.lock().ok()
+                    .map(|g| g.clone())
+                    .unwrap_or_default();
 
-                post_event(
-                    uuid, "HEARTBEAT".into(), station_id,
+                let _status = post_event(
+                    uuid, sid, "APP_HEALTHY".into(), station_id, brand_id,
                     Some(astate), None, None, version, None,
                 ).await;
             }
