@@ -27,6 +27,16 @@ function streamToStationId(url) {
   catch { return url; }
 }
 
+// Rileva spot/jingle — allineato alla logica del vecchio player .NET (NowPlayingService.IsNonMusical)
+const _SPOT_KEYWORDS = ['spot','meteo','news','promo','pubblicità','jingle','liner','rubrica',
+  'professione casa','funside','gustracks','multiradio','multi radio','ident','stacco'];
+function isSpot(title, artist, raw) {
+  const combined = ((title||'')+' '+(artist||'')+' '+(raw||'')).toLowerCase();
+  if (_SPOT_KEYWORDS.some(kw => combined.includes(kw))) return true;
+  if (!artist && (title||'').length < 20) return true;
+  return false;
+}
+
 const state = {
   brand: null, playing: false, currentTitle: '', currentArtist: '',
   audioPhase: 'stopped', networkOnline: navigator.onLine, devMode: false, log: [],
@@ -809,9 +819,10 @@ async function init() {
           _lastTrackAt = Date.now();
           document.getElementById('trackTitle').textContent  = title  || 'ON AIR';
           document.getElementById('trackArtist').textContent = artist || '';
-          log('[TRACK_CHANGE] '+raw);
+          const spot = isSpot(title, artist, raw);
+          log('[TRACK_CHANGE] '+(spot?'[SPOT] ':'')+raw);
           const trackLabel = artist ? artist+' — '+title : title;
-          diag('TRACK_CHANGE', { audioState:'playing', issueNote: trackLabel, extra:{title,artist,raw} });
+          diag('TRACK_CHANGE', { audioState:'playing', issueNote: trackLabel, extra:{title,artist,raw,is_spot:spot} });
           fetchCover(title, artist);
         }, ICY_DELAY_MS);
       });
