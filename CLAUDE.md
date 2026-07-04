@@ -175,22 +175,54 @@ ssh -i ~/.ssh/id_gustudio_vps root@195.14.9.37 'cd /root/gustudio79 && git add t
 
 ---
 
+## TELEMETRIA — PAYLOAD CORRETTO (snake_case)
+
+`EventPayload` in `telemetry.rs` usa snake_case (NO `rename_all=camelCase`) perché
+il server legge `station_id`, `audio_state`, `brand_id`, `version` in snake_case.
+Il campo `ts` è ISO-8601 string (`now_iso()` via `chrono::Utc::now().to_rfc3339()`).
+Il server usa sempre `datetime.now()` ignorando il ts del client.
+
+### Rilevamento spot (src/main.js — `isSpot()`)
+Allineato a `.NET NowPlayingService.IsNonMusical`:
+- combined (title+artist+raw) contiene keyword: spot/meteo/news/promo/pubblicità/jingle/
+  liner/rubrica/professione casa/funside/gustracks/multiradio/multi radio/ident/stacco
+- OPPURE: artist vuoto E title.length < 20
+→ `extra.is_spot = true/false` in ogni TRACK_CHANGE
+
+### Pannello server — comportamento atteso
+- TRACK_CHANGE musica: verde, `artist — title` una sola riga
+- TRACK_CHANGE spot: arancione `#fb923c`, italico
+- `last_seen` aggiornato da `api_player_health` ad ogni evento → player resta online
+  finché manda heartbeat (ogni 60s). Online = `last_seen < 12 minuti fa`.
+
+---
+
 ## STATO DEBUG — 2026-07-04
 
-### Funzionante ✓
+### Tutto funzionante ✓
 - Audio, ICY metadata, cover, setup modal, neon ring (CSS), drag finestra
 - Crash macOS 26 risolto (rimosso RAF)
 - Watchdog auto-reconnect con backoff esponenziale (5s→10s→20s→40s)
 - Registrazione postazione → HTTP 200 ✓
-- Eventi health → HTTP 200 ✓ (`Ultima connessione` nel panel si aggiorna)
+- Log eventi nel pannello server ✓ (snake_case payload + mount name station_id)
+- Timestamp corretti ✓ (server usa ora propria, _fmtTs/_fmtTime fix ×1000)
+- Spot arancione ✓, brano singola riga ✓
+- Player rimane online nel pannello ✓ (api_player_health aggiorna last_seen)
 
-### Funzionante ✓ (fix 2026-07-04) — log eventi nel server panel
-- **Fix 1**: payload snake_case — rimosso `serde rename_all=camelCase` da `EventPayload`. Il server legge `station_id`, `audio_state`, `brand_id`, `version` in snake_case. Con camelCase arrivavano vuoti.
-- **Fix 2**: `streamToStationId(url)` in JS estrae mount name (`funsidelatina`) dall'URL stream. Il server deriva lo slug dalla parte finale dell'URL.
-- **Fix 3**: server — `_ph_read_uuid_events` sort key crashava con ts misti int/str. Fix: funzione `_ts_key()` che normalizza entrambi i formati.
+### Fix applicati in questa sessione (2026-07-04)
+| Fix | Lato | Dettaglio |
+|-----|------|-----------|
+| payload snake_case | Client Rust | rimosso `rename_all=camelCase` da EventPayload |
+| station_id mount name | Client JS | `streamToStationId()` estrae ultima parte URL |
+| ts ISO string | Client Rust | `now_secs()→now_iso()` (RFC3339) |
+| ts sempre dal server | Server | `api_player_health` ignora ts client |
+| sort key ts misti | Server | `_ts_key()` normalizza int e str |
+| _fmtTs fix ×1000 | Server | integer seconds → ×1000 per new Date() |
+| brano doppio | Server | issue_note+audio_state+engine soppressi per TRACK_CHANGE |
+| spot arancione | Client+Server | `isSpot()` + `_eventColor(ev,extra)` |
+| player sempre online | Server | `api_player_health` aggiorna `last_seen` |
 
 ---
-
 
 ## Da fare
 1. Build One Radio / GUSTracks
