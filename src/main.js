@@ -812,9 +812,6 @@ async function init() {
           log('[TRACK_CHANGE] '+raw);
           const trackLabel = artist ? artist+' — '+title : title;
           diag('TRACK_CHANGE', { audioState:'playing', issueNote: trackLabel, extra:{title,artist,raw} });
-          safeInvoke('send_track_change', {
-            sessionId, artist: artist||null, title: title||null, rawTitle: raw||null,
-          }).then(s => log('[TRACK_CHANGE_V2] HTTP='+s)).catch(()=>{});
           fetchCover(title, artist);
         }, ICY_DELAY_MS);
       });

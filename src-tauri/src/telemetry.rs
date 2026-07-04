@@ -10,11 +10,8 @@ pub fn api_key() -> String {
     std::env::var("PLAYER_API_KEY").unwrap_or_else(|_| "pc-radio-2026".to_string())
 }
 
-fn now_secs() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
+fn now_iso() -> String {
+    Utc::now().to_rfc3339()
 }
 
 fn client() -> reqwest::Client {
@@ -99,7 +96,7 @@ struct EventPayload {
     os:           String,
     architecture: String,
     version:      String,
-    ts:           u64,
+    ts:           String,
     #[serde(skip_serializing_if = "Option::is_none")]
     extra:        Option<serde_json::Value>,
 }
@@ -132,7 +129,7 @@ pub async fn post_event(
         os:           std::env::consts::OS.to_string(),
         architecture: std::env::consts::ARCH.to_string(),
         version,
-        ts:           now_secs(),
+        ts:           now_iso(),
         extra,
     };
     match client().post(&url).json(&payload).send().await {
