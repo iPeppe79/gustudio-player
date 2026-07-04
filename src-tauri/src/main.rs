@@ -68,7 +68,6 @@ async fn telemetry_init(
     telemetry::start_heartbeat(
         state.info.clone(),
         state.audio_state.clone(),
-        state.session_id.clone(),
         state.hb_handle.clone(),
     );
     Ok(())
@@ -121,7 +120,6 @@ async fn telemetry_register(
     telemetry::start_heartbeat(
         state.info.clone(),
         state.audio_state.clone(),
-        state.session_id.clone(),
         state.hb_handle.clone(),
     );
     result
@@ -162,13 +160,12 @@ async fn send_event(
     }
 
     let quad = tele.info.lock().ok().and_then(|g| {
-        g.as_ref().map(|i| (i.uuid.clone(), i.station_id.clone(), i.brand.clone(), i.version.clone()))
+        g.as_ref().map(|i| (i.uuid.clone(), i.hostname.clone(), i.station_id.clone(), i.brand.clone(), i.version.clone()))
     });
-    let sid = tele.session_id.lock().ok().map(|g| g.clone()).unwrap_or_default();
 
-    if let Some((uuid, station_id, brand_id, version)) = quad {
+    if let Some((uuid, hostname, station_id, brand_id, version)) = quad {
         let status = telemetry::post_event(
-            uuid, sid, event, station_id, brand_id,
+            uuid, hostname, event, station_id, brand_id,
             audio_state, issue_type, issue_note, version, extra,
         ).await;
         return Ok(status);

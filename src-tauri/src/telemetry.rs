@@ -82,38 +82,33 @@ impl TelemetryState {
     }
 }
 
-// Payload evento — schema v2, mantiene uuid (obbligatorio server) + campi camelCase v2
+// Payload evento — snake_case per matchare i campi letti dal server
 #[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
 struct EventPayload {
-    uuid:           String,    // obbligatorio dal server
-    schema_version: u8,        // schemaVersion: 2
-    client_id:      String,    // clientId (alias uuid per schema v2)
-    session_id:     String,    // sessionId
-    station_id:     String,    // stationId
-    brand_id:       String,    // brandId
-    event:          String,
+    uuid:         String,
+    event:        String,
+    station_id:   String,
+    brand_id:     String,
+    hostname:     String,
+    audio_state:  Option<String>,
+    audio_engine: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    playback_state: Option<String>,  // playbackState
+    issue_type:   Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    issue_type:     Option<String>,
+    issue_note:   Option<String>,
+    os:           String,
+    architecture: String,
+    version:      String,
+    ts:           u64,
     #[serde(skip_serializing_if = "Option::is_none")]
-    issue_note:     Option<String>,
-    os:             String,
-    os_version:     String,    // osVersion
-    architecture:   String,
-    app_version:    String,    // appVersion
-    audio_engine:   String,    // audioEngine
-    ts:             u64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    extra:          Option<serde_json::Value>,
+    extra:        Option<serde_json::Value>,
 }
 
 // ── Funzioni di invio ─────────────────────────────────────────────────────────
 
 pub async fn post_event(
     uuid:        String,
-    session_id:  String,
+    hostname:    String,
     event:       String,
     station_id:  String,
     brand_id:    String,
@@ -124,23 +119,19 @@ pub async fn post_event(
     extra:       Option<serde_json::Value>,
 ) -> u16 {
     let url     = format!("{}/player-health?api_key={}", BASE, api_key());
-    let os_info = os_info::get();
     let payload = EventPayload {
-        uuid:       uuid.clone(),
-        schema_version: 2,
-        client_id:  uuid,
-        session_id,
+        uuid,
+        event,
         station_id,
         brand_id,
-        event,
-        playback_state: audio_state,
+        hostname,
+        audio_state,
+        audio_engine: "mpv".to_string(),
         issue_type,
         issue_note,
         os:           std::env::consts::OS.to_string(),
-        os_version:   format!("{} {}", os_info.os_type(), os_info.version()),
         architecture: std::env::consts::ARCH.to_string(),
-        app_version:  version,
-        audio_engine: "mpv".to_string(),
+        version,
         ts:           now_secs(),
         extra,
     };
@@ -208,7 +199,6 @@ pub async fn do_register(info: &PlayerInfo) -> Result<String, String> {
 pub fn start_heartbeat(
     info:        Arc<Mutex<Option<PlayerInfo>>>,
     audio_state: Arc<Mutex<String>>,
-    session_id:  Arc<Mutex<String>>,
     hb_handle:   Arc<Mutex<Option<JoinHandle<()>>>>,
 ) {
     if let Ok(mut g) = hb_handle.lock() {
@@ -221,19 +211,16 @@ pub fn start_heartbeat(
 
             let quad = info.lock().ok()
                 .and_then(|g| g.as_ref().map(|i| (
-                    i.uuid.clone(), i.station_id.clone(), i.brand.clone(), i.version.clone(),
+                    i.uuid.clone(), i.hostname.clone(), i.station_id.clone(), i.brand.clone(), i.version.clone(),
                 )));
 
-            if let Some((uuid, station_id, brand_id, version)) = quad {
+            if let Some((uuid, hostname, station_id, brand_id, version)) = quad {
                 let astate = audio_state.lock().ok()
                     .map(|g| g.clone())
                     .unwrap_or_else(|| "unknown".to_string());
-                let sid = session_id.lock().ok()
-                    .map(|g| g.clone())
-                    .unwrap_or_default();
 
                 let _status = post_event(
-                    uuid, sid, "APP_HEALTHY".into(), station_id, brand_id,
+                    uuid, hostname, "APP_HEALTHY".into(), station_id, brand_id,
                     Some(astate), None, None, version, None,
                 ).await;
             }
