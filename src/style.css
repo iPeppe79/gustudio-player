@@ -4,20 +4,21 @@
   --text:        #E8F4FB;
   --primary-a20: #29ABE233;
   --primary-a60: #29ABE299;
-  --radius:      16px;
+  --radius:      0px;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 [hidden] { display: none !important; }
 
 html, body {
-  background: transparent;
+  margin: 0; padding: 0;
+  background: var(--bg) !important;
+  overflow: hidden;
   font-family: 'Inter', 'SF Pro Display', 'Segoe UI', 'Helvetica Neue', sans-serif;
   font-size: 13px;
   color: var(--text);
   -webkit-user-select: none;
   user-select: none;
-  overflow: hidden;
   width: 300px;
   height: 490px;
 }
@@ -26,15 +27,32 @@ html, body {
   width: 300px;
   height: 490px;
   background: var(--bg);
-  border-radius: var(--radius);
+  border-radius: 16px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  box-shadow:
-    0 32px 80px rgba(0,0,0,0.85),
-    0 0 0 0.5px rgba(255,255,255,0.08);
   position: relative;
 }
+
+/* ── Cover-blur background ─────────────────────────────────────────────────── */
+#app::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: var(--cover-bg-url, none);
+  background-size: cover;
+  background-position: center;
+  filter: blur(40px) brightness(0.3) saturate(1.4);
+  opacity: 0;
+  transition: opacity 0.6s ease;
+  pointer-events: none;
+  z-index: 0;
+  border-radius: var(--radius);
+}
+#app.has-cover-bg::before { opacity: 1; }
+
+/* Tutti i figli diretti di #app sopra il blur */
+#app > * { position: relative; z-index: 1; }
 
 /* Nessuna immagine è draggabile */
 img {
@@ -112,8 +130,8 @@ img {
 }
 
 .brand-logo {
-  max-height: 34px;          /* più grande */
-  max-width: 120px;
+  max-height: 42px;
+  max-width: 140px;
   width: auto;
   height: auto;
   object-fit: contain;
@@ -149,23 +167,7 @@ img {
   pointer-events: none;
 }
 
-/* Neon ring — CSS animation, nessun RAF */
-@keyframes neon-breath {
-  0%,100% { opacity: 0.55; }
-  50%      { opacity: 1;    }
-}
-.cover-wrap.playing::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: 10px;
-  box-shadow:
-    inset 0 0 0 4px var(--neon-color, #29ABE2),
-    0 0  60px 8px var(--neon-color, #29ABE2),
-    0 0 120px 16px var(--neon-color, #29ABE2);
-  animation: neon-breath 2.8s ease-in-out infinite;
-  pointer-events: none;
-}
+/* Neon ring rimosso — cover pulita senza contorno */
 .cover-fallback {
   position: absolute; inset: 0;
   display: flex; flex-direction: column;
@@ -239,7 +241,7 @@ img {
 
 .track-title {
   padding: 6px 16px 1px;
-  font-size: 18px; font-weight: 800;
+  font-size: 15px; font-weight: 700;
   line-height: 1.2; letter-spacing: -0.4px;
   flex-shrink: 0;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;

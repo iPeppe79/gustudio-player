@@ -123,7 +123,7 @@ pub async fn post_event(
         brand_id,
         hostname,
         audio_state,
-        audio_engine: "mpv".to_string(),
+        audio_engine: "webaudio".to_string(),
         issue_type,
         issue_note,
         os:           std::env::consts::OS.to_string(),

@@ -202,6 +202,7 @@ fn main() {
         .plugin(tauri_plugin_http::init())
         .manage(IcyState::new())
         .manage(TelemetryState::new())
+        .setup(|_app| { Ok(()) })
         .invoke_handler(tauri::generate_handler![
             // audio
             start_icy,

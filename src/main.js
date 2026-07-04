@@ -30,6 +30,19 @@ function streamToStationId(url) {
 // Rileva spot/jingle — allineato alla logica del vecchio player .NET (NowPlayingService.IsNonMusical)
 const _SPOT_KEYWORDS = ['spot','meteo','news','promo','pubblicità','jingle','liner','rubrica',
   'professione casa','funside','gustracks','multiradio','multi radio','ident','stacco'];
+// Fix caratteri Latin-1 mal decodificati dall'ICY metadata
+function fixEncoding(s) {
+  if (!s) return s;
+  try {
+    // Prova a interpretare la stringa come Latin-1 recodificata in UTF-8
+    const bytes = new Uint8Array(s.split('').map(c => c.charCodeAt(0) & 0xff));
+    const decoded = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    return decoded;
+  } catch {
+    return s;
+  }
+}
+
 function isSpot(title, artist, raw) {
   const combined = ((title||'')+' '+(artist||'')+' '+(raw||'')).toLowerCase();
   if (_SPOT_KEYWORDS.some(kw => combined.includes(kw))) return true;
@@ -199,6 +212,19 @@ function stop() {
   log('[PLAY_STOP]');
 }
 
+// ── Cover-blur background ─────────────────────────────────────────────────────
+function setCoverBg(url) {
+  const app = document.getElementById('app');
+  if (!app) return;
+  if (url) {
+    app.style.setProperty('--cover-bg-url', `url("${url}")`);
+    app.classList.add('has-cover-bg');
+  } else {
+    app.style.removeProperty('--cover-bg-url');
+    app.classList.remove('has-cover-bg');
+  }
+}
+
 // ── Cover ─────────────────────────────────────────────────────────────────────
 function showFallbackCover() {
   const img = document.getElementById('coverImg');
@@ -206,7 +232,7 @@ function showFallbackCover() {
   // 1. Fallback da disco (scelto dall'utente via UI)
   const fp = brandFallbacks[state.brand && state.brand.brandId];
   if (fp && IS_TAURI) {
-    img.onload  = () => { img.hidden=false; fb.style.display='none'; };
+    img.onload  = () => { img.hidden=false; fb.style.display='none'; setCoverBg(img.src); };
     img.onerror = () => { tryBrandFallbackCover(img, fb); };
     img.src = convertFileSrc(fp); return;
   }
@@ -217,11 +243,11 @@ function showFallbackCover() {
 function tryBrandFallbackCover(img, fb) {
   const bundled = state.brand && state.brand.fallbackCover;
   if (bundled) {
-    img.onload  = () => { img.hidden=false; fb.style.display='none'; };
-    img.onerror = () => { img.hidden=true;  fb.style.display=''; };
+    img.onload  = () => { img.hidden=false; fb.style.display='none'; setCoverBg(img.src); };
+    img.onerror = () => { img.hidden=true;  fb.style.display=''; setCoverBg(null); };
     img.src = bundled; return;
   }
-  img.hidden=true; fb.style.display='';
+  img.hidden=true; fb.style.display=''; setCoverBg(null);
 }
 
 async function fetchCover(title, artist) {
@@ -235,7 +261,7 @@ async function fetchCover(title, artist) {
     const fb  = document.getElementById('coverFallback');
     const url = result.artwork_url || (result.local_path && IS_TAURI ? convertFileSrc(result.local_path) : null);
     if (!url) { showFallbackCover(); return; }
-    img.onload  = () => { img.hidden=false; fb.style.display='none'; };
+    img.onload  = () => { img.hidden=false; fb.style.display='none'; setCoverBg(url); };
     img.onerror = () => { showFallbackCover(); };
     img.src = url;
   } catch (e) { log('[ARTWORK_ERR] '+e); showFallbackCover(); }
@@ -811,7 +837,9 @@ async function init() {
         diag(type, { audioState: m[type] || getAudioState() });
       });
       await listen('icy-meta', ev => {
-        const { raw, title, artist } = ev.payload;
+        const { raw } = ev.payload;
+        const title  = fixEncoding(ev.payload.title);
+        const artist = fixEncoding(ev.payload.artist);
         log('[ICY_RAW] '+raw);
         setTimeout(() => {
           if (!state.playing || title===state.currentTitle) return;

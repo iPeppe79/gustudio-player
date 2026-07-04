@@ -16,7 +16,7 @@ path = "src/main.rs"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
+tauri = { version = "2", features = [ "tray-icon"] }
 tauri-plugin-fs = "2"
 tauri-plugin-http = "2"
 serde = { version = "1", features = ["derive"] }

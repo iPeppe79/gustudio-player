@@ -200,7 +200,7 @@ Allineato a `.NET NowPlayingService.IsNonMusical`:
 ## STATO DEBUG — 2026-07-04
 
 ### Tutto funzionante ✓
-- Audio, ICY metadata, cover, setup modal, neon ring (CSS), drag finestra
+- Audio, ICY metadata, cover, setup modal, drag finestra
 - Crash macOS 26 risolto (rimosso RAF)
 - Watchdog auto-reconnect con backoff esponenziale (5s→10s→20s→40s)
 - Registrazione postazione → HTTP 200 ✓
@@ -208,6 +208,19 @@ Allineato a `.NET NowPlayingService.IsNonMusical`:
 - Timestamp corretti ✓ (server usa ora propria, _fmtTs/_fmtTime fix ×1000)
 - Spot arancione ✓, brano singola riga ✓
 - Player rimane online nel pannello ✓ (api_player_health aggiorna last_seen)
+- Export CSV brani/spot nel pannello ✓
+
+### Motore audio — VERITÀ
+**Il motore audio è il tag `<audio>` WebKit** (`src/index.html:188`, `src/main.js:76-182`).
+NON è mpv. La stringa `audio_engine: "mpv"` in `telemetry.rs:126` era hardcoded
+fuorviante — corretta a `"webaudio"` il 2026-07-04.
+
+EQ attuale è **FAKE** (`_fakeEqData` in main.js) per limite CORS del webview WebKit
+che non espone lo stream radio al pipeline Web Audio API.
+
+**STRADA A — prossimo sprint**: mpv come processo Rust → stdout PCM → RustFFT →
+canvas, che darebbe EQ reale E probabilmente risolverebbe il bug-silenzio
+migliorando la gestione stream.
 
 ### Fix applicati in questa sessione (2026-07-04)
 | Fix | Lato | Dettaglio |
@@ -221,6 +234,9 @@ Allineato a `.NET NowPlayingService.IsNonMusical`:
 | brano doppio | Server | issue_note+audio_state+engine soppressi per TRACK_CHANGE |
 | spot arancione | Client+Server | `isSpot()` + `_eventColor(ev,extra)` |
 | player sempre online | Server | `api_player_health` aggiorna `last_seen` |
+| audio_engine label | Client Rust | "mpv" → "webaudio" (motore reale) |
+| neon ring rimosso | CSS | cover pulita senza bordino colorato |
+| export CSV brani | Server | pulsante ⬇ nel tab Brani suonati |
 
 ---
 
