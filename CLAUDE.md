@@ -145,8 +145,33 @@ src-tauri/src/icy.rs       — lettore ICY metadata (Rust)
 ```
 
 ## BUILD
-- `npm run tauri build` → .dmg + .app in `src-tauri/target/release/bundle/`
+- `BRAND=funside npm run tauri build` → .dmg + .app in `src-tauri/target/release/bundle/`
+- Installa: `rm -rf "/Applications/FunSide Radio.app" && cp -R "...bundle/macos/FunSide Radio.app" "/Applications/FunSide Radio.app"`
 - **MAI committare**: dist/ target/ *.dll *.dylib .env
+
+---
+
+## VPS — ACCESSO E DEPLOY
+
+**SSH**: `ssh -i ~/.ssh/id_gustudio_vps root@195.14.9.37`
+(credenziali complete in `/Users/gus79/Documents/gustudio-player/.env.vps` — non committare)
+
+**Servizio**: `systemctl restart gustudio79` / `systemctl status gustudio79`
+
+**File principale**: `/root/gustudio79/tts_gui.py`
+
+**Procedura modifica tts_gui.py** (OBBLIGATORIA — mai editare diretto sul server):
+```bash
+scp -i ~/.ssh/id_gustudio_vps root@195.14.9.37:/root/gustudio79/tts_gui.py /tmp/tts_gui.py
+# edita con Edit tool
+python3 -c "import py_compile; py_compile.compile('/tmp/tts_gui.py', doraise=True)"
+scp -i ~/.ssh/id_gustudio_vps /tmp/tts_gui.py root@195.14.9.37:/root/gustudio79/tts_gui.py
+ssh -i ~/.ssh/id_gustudio_vps root@195.14.9.37 'cd /root/gustudio79 && git add tts_gui.py && git commit -m "..." && systemctl restart gustudio79'
+```
+
+**player-health dir**: `/root/gustudio79/player-health/{slug}/{uuid}_YYYYMMDD.jsonl`
+- slug = mount name dello stream (es. `funsidelatina`, `profcasa`)
+- API: `GET /api/player-health-list?slug=funsidelatina&uuid=...&api_key=pc-radio-2026`
 
 ---
 
@@ -159,15 +184,10 @@ src-tauri/src/icy.rs       — lettore ICY metadata (Rust)
 - Registrazione postazione → HTTP 200 ✓
 - Eventi health → HTTP 200 ✓ (`Ultima connessione` nel panel si aggiorna)
 
-### BUG RISOLTO (2026-07-04) — log eventi non appaiono nel server panel
-**Causa**: `station_id` veniva inviato come URL completo
-(`https://stream2.multi-radio.com/funsidelatina`) invece del mount name
-(`funsidelatina`). Il server salva gli eventi in una cartella derivata da questo
-slug — con l'URL completo, gli eventi venivano salvati nel posto sbagliato.
-
-**Fix**: aggiunta `streamToStationId(url)` in `src/main.js` che estrae l'ultima
-parte del path. Tutte e 3 le chiamate `telemetry_init`/`telemetry_register`
-ora passano `funsidelatina` invece dell'URL completo.
+### Funzionante ✓ (fix 2026-07-04) — log eventi nel server panel
+- **Fix 1**: payload snake_case — rimosso `serde rename_all=camelCase` da `EventPayload`. Il server legge `station_id`, `audio_state`, `brand_id`, `version` in snake_case. Con camelCase arrivavano vuoti.
+- **Fix 2**: `streamToStationId(url)` in JS estrae mount name (`funsidelatina`) dall'URL stream. Il server deriva lo slug dalla parte finale dell'URL.
+- **Fix 3**: server — `_ph_read_uuid_events` sort key crashava con ts misti int/str. Fix: funzione `_ts_key()` che normalizza entrambi i formati.
 
 ---
 
