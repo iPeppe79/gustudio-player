@@ -235,10 +235,16 @@ Il tag `<audio>` è stato RIMOSSO. Play/stop/volume → `invoke()` → mpv via s
 - **Watchdog anti-silenzio**: se `core-idle` bloccato >8s o cache ferma o mpv esce →
   KILL+RESTART automatico + ricarica stream. Logga `RECONNECT`/`AUDIO_STALL` con `stall_ms`.
   Flag mpv: reconnect ffmpeg + **`--network-timeout=10`** (mancava nel vecchio Electron).
-- **EQ REALE**: 2° processo mpv → PCM float32 mono su stdout → `rustfft` (Hann, STFT
-  ~60fps) → 48 bande log → evento `eq-bands` → canvas. `_fakeEqData` eliminato.
-  NB: il `<canvas id="eqCanvas">` non esisteva in index.html (per questo il visualizer
-  non si vedeva) — aggiunto, sovrapposto in fondo alla cover.
+- **EQ REALE (macOS)**: 2° processo mpv con `--ao=pcm --ao-pcm-file=/dev/stdout
+  --ao-pcm-waveheader=no` (mpv NON scrive su `-`, serve `/dev/stdout`, VERIFICATO)
+  → PCM float32 mono → `rustfft` (Hann, STFT ~60fps) → 48 bande log → evento `eq-bands`
+  → canvas (barre colorate blu→giallo→rosso). `_fakeEqData`/`AudioContext`/`analyser`
+  ELIMINATI dal frontend: nessun residuo fake. Il `<canvas id="eqCanvas">` non esisteva
+  in index.html (per questo non si vedeva) — aggiunto.
+- **EQ su WINDOWS = DISATTIVATO (TODO)**: `start_pcm` fa `return` su `#[cfg(windows)]`
+  (come il vecchio Electron: `if win32 return`). mpv su Windows non scrive PCM su una
+  pipe stdout affidabile → EQ fermo, audio ok. DA FARE: EQ reale anche su Windows via
+  **FIFO / named-pipe dedicata** (`\\.\pipe\...`) letta dal backend Rust.
 - `telemetry.rs`: `audio_engine` ora = `crate::mpv::AUDIO_ENGINE` (`"mpv"`), non hardcoded.
 - Eventi Rust→JS: `mpv-state {phase}`, `mpv-restart`, `mpv-ready`, `eq-bands`.
   `handleMpvState()` in main.js mappa le fasi su UI + telemetria (PLAY_START_OK,
@@ -255,10 +261,27 @@ in `src-tauri/bin/` col nome-triple (`mpv-aarch64-apple-darwin`, `mpv-x86_64-app
   MPV_MAC_URL). I 3 binari devono essere STESSA versione mpv >=0.38.
 - Firma macOS: predisposta in CI (secrets APPLE_*), non ancora testata.
 
+### Verificato dal vivo (DMG 2026-07-05)
+- App bundle: mpv principale + mpv PCM partono dall'interno del `.app`, core-idle=false,
+  cache che avanza, titolo live → **audio mpv OK**. EQ barre reali che si muovono col brano.
+- **Registrazione postazione + log = INTATTI** (non toccati dalla migrazione mpv):
+  `init()` chiama `telemetry_init` → `checkFirstRun()` (modal prima attivazione se
+  `station_data` assente) → `doRegister()` → `startHeartbeat()`. Eventi APP_START/
+  PLAY_REQUEST/TRACK_CHANGE/HEARTBEAT via `diag()`→`send_event`→`/api/player-health`.
+  `handleMpvState()` produce PLAY_START_OK/BUFFERING/AUDIO_STALL/RECONNECT al posto dei
+  vecchi eventi del tag `<audio>`. TRACK_CHANGE resta da ICY (`icy.rs`, invariato).
+
 ### DA VERIFICARE ancora (non provato live)
-- **PCM su stdout `--ao-pcm-file=-`**: se mpv non scrive su `-`, l'FFT resta a zero →
-  fallback a file/FIFO temp come l'Electron. Confermare in `tauri dev`/DMG.
 - Watchdog live "stacca rete → riaggancio": logica ok, dimostrazione GUI non eseguita.
+- Portabilità sidecar mpv su altri Mac (quello nel DMG è Homebrew, gira solo su questa macchina).
+
+### UI (2026-07-05, sera)
+- Finestra `transparent:true` + `macOSPrivateApi:true` (320×524) → `#app` 300×502 con
+  angoli tondi + ombra floating. Niente bleed bianco né pallini nativi (verificato screenshot).
+- Fix pannello "che si apriva dietro": `#app > *{position:relative}` (spec. 1,0,0) vinceva
+  su `.panel{position:absolute}` → aggiunte `#app > .panel` / `#app > .modal-overlay`.
+- EQ: fascia bassa (22px) di **barre colorate** blu→giallo→rosso SOTTO la cover
+  (non più onda sinusoidale, non più sovrapposto). Cover 272px (hero).
 
 ### Fix applicati in questa sessione (2026-07-04)
 | Fix | Lato | Dettaglio |
@@ -279,6 +302,9 @@ in `src-tauri/bin/` col nome-triple (`mpv-aarch64-apple-darwin`, `mpv-x86_64-app
 ---
 
 ## Da fare
-1. Build One Radio / GUSTracks
-2. CI GitHub Actions multi-brand
-3. Ri-registrare "FUNSIDE TEST PEPPE" con dati reali
+1. **EQ reale su Windows** via FIFO/named-pipe (ora l'EQ è attivo solo su macOS)
+2. Binari mpv self-contained per i 3 triple + firma macOS (packaging distribuzione)
+3. Verifica watchdog live (stacca rete → riaggancio)
+4. Build One Radio / GUSTracks
+5. CI GitHub Actions multi-brand
+6. Ri-registrare "FUNSIDE TEST PEPPE" con dati reali
