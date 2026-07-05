@@ -22,7 +22,7 @@ html, body {
   -webkit-user-select: none;
   user-select: none;
   width: 320px;
-  height: 512px;
+  height: 524px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -30,7 +30,7 @@ html, body {
 
 #app {
   width: 300px;
-  height: 490px;
+  height: 502px;
   background: var(--bg);
   border-radius: var(--radius);
   overflow: hidden;
@@ -161,9 +161,9 @@ img {
 
 /* ── Cover ───────────────────────────────────────────────────────────────────── */
 .cover-wrap {
-  width: 240px;
-  height: 240px;
-  margin: 8px auto 2px;
+  width: 272px;
+  height: 272px;
+  margin: 8px auto 0;
   flex-shrink: 0;
   position: relative;
   background: #111120;
@@ -171,7 +171,7 @@ img {
   border-radius: 12px;
 }
 #coverImg {
-  width: 240px; height: 240px;
+  width: 272px; height: 272px;
   object-fit: cover;
   display: block;
   -webkit-user-drag: none;
@@ -208,7 +208,7 @@ img {
 /* ── Now playing ─────────────────────────────────────────────────────────────── */
 .now-playing {
   display: flex; align-items: center; gap: 7px;
-  padding: 14px 16px 4px;
+  padding: 8px 16px 2px;
   flex-shrink: 0;
 }
 
@@ -276,17 +276,17 @@ img {
 /* ── Visualizer FFT ───────────────────────────────────────────────────────────── */
 /* Fascia dedicata SOTTO la cover: barre colorate. */
 .eq-strip {
-  height: 42px;
+  height: 26px;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
-  padding: 2px 12px 6px;
+  padding: 3px 14px 2px;
   flex-shrink: 0;
 }
 .eq-canvas {
   display: block;
-  width: 276px;
-  height: 36px;
+  width: 272px;
+  height: 22px;
   pointer-events: none;
 }
 
@@ -295,9 +295,9 @@ img {
   display: flex;
   align-items: center;
   padding: 0 16px;
-  margin-top: 10px;
-  margin-bottom: 10px;
-  height: 52px;
+  margin-top: 8px;
+  margin-bottom: 8px;
+  height: 50px;
   border-top: 1px solid rgba(255,255,255,0.04);
   flex-shrink: 0;
   gap: 8px;

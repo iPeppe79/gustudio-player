@@ -454,7 +454,7 @@ function _ensureEqCanvas() {
   const canvas = document.getElementById('eqCanvas');
   if (!canvas) return false;
   const dpr = window.devicePixelRatio || 1;
-  const W = 276, H = 36;
+  const W = 272, H = 22;
   canvas.width  = W * dpr;
   canvas.height = H * dpr;
   canvas.style.width  = W + 'px';
@@ -491,7 +491,7 @@ function fadeOutEq() {
   const canvas = document.getElementById('eqCanvas');
   if (!canvas || !smoothBars) return;
   const ctx = canvas.getContext('2d');
-  const W = 276, H = 36;
+  const W = 272, H = 22;
   function step() {
     if (eqRunning) return;
     let any = false;
@@ -512,7 +512,7 @@ function drawEq() {
   const canvas = document.getElementById('eqCanvas');
   if (!canvas) { eqRunning = false; return; }
   const ctx = canvas.getContext('2d');
-  const W = 276, H = 36;
+  const W = 272, H = 22;
 
   const bands = _eqBands;
   if (smoothBars && bands.length === smoothBars.length) {
