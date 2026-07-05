@@ -123,7 +123,8 @@ pub async fn post_event(
         brand_id,
         hostname,
         audio_state,
-        audio_engine: "webaudio".to_string(),
+        // Motore audio reale: mpv (vedi mpv.rs). Non più hardcoded fasullo.
+        audio_engine: crate::mpv::AUDIO_ENGINE.to_string(),
         issue_type,
         issue_note,
         os:           std::env::consts::OS.to_string(),

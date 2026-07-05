@@ -2,10 +2,55 @@
 
 mod artwork;
 mod icy;
+mod mpv;
 mod telemetry;
 
 use icy::IcyState;
+use mpv::MpvState;
 use telemetry::TelemetryState;
+
+// ── mpv (motore audio) ──────────────────────────────────────────────────────────
+
+#[tauri::command]
+async fn mpv_init(state: tauri::State<'_, MpvState>, app: tauri::AppHandle) -> Result<(), ()> {
+    state.init(app);
+    Ok(())
+}
+
+#[tauri::command]
+async fn mpv_play(state: tauri::State<'_, MpvState>, url: String) -> Result<(), ()> {
+    state.play(url);
+    Ok(())
+}
+
+#[tauri::command]
+async fn mpv_pause(state: tauri::State<'_, MpvState>) -> Result<(), ()> {
+    state.pause();
+    Ok(())
+}
+
+#[tauri::command]
+async fn mpv_resume(state: tauri::State<'_, MpvState>) -> Result<(), ()> {
+    state.resume();
+    Ok(())
+}
+
+#[tauri::command]
+async fn mpv_stop(state: tauri::State<'_, MpvState>) -> Result<(), ()> {
+    state.stop();
+    Ok(())
+}
+
+#[tauri::command]
+async fn mpv_set_volume(state: tauri::State<'_, MpvState>, volume: f64) -> Result<(), ()> {
+    state.set_volume(volume);
+    Ok(())
+}
+
+#[tauri::command]
+async fn mpv_is_alive(state: tauri::State<'_, MpvState>) -> Result<bool, ()> {
+    Ok(state.is_alive())
+}
 
 // ── ICY ───────────────────────────────────────────────────────────────────────
 
@@ -202,9 +247,24 @@ fn main() {
         .plugin(tauri_plugin_http::init())
         .manage(IcyState::new())
         .manage(TelemetryState::new())
-        .setup(|_app| { Ok(()) })
+        .manage(MpvState::new())
+        .setup(|app| {
+            // Avvia subito il supervisore mpv così il motore è pronto al primo play.
+            use tauri::Manager;
+            let mpv = app.state::<MpvState>();
+            mpv.init(app.handle().clone());
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
-            // audio
+            // audio (mpv)
+            mpv_init,
+            mpv_play,
+            mpv_pause,
+            mpv_resume,
+            mpv_stop,
+            mpv_set_volume,
+            mpv_is_alive,
+            // ICY metadata
             start_icy,
             stop_icy,
             // cover
@@ -222,6 +282,13 @@ fn main() {
             send_track_change,
             telemetry_health,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            // Alla chiusura app: ferma mpv e i figli PCM senza riavvii.
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                use tauri::Manager;
+                app.state::<MpvState>().shutdown();
+            }
+        });
 }

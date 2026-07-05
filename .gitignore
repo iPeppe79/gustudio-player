@@ -35,6 +35,12 @@ obj/
 *.key
 secrets.json
 
+# --- mpv sidecar: i binari NO, ma traccia doc + script fetch ---
+!src-tauri/bin/
+src-tauri/bin/*
+!src-tauri/bin/README.md
+!src-tauri/bin/fetch-mpv.sh
+
 # --- OS / editor ---
 .DS_Store
 Thumbs.db

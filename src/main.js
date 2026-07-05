@@ -72,15 +72,20 @@ function setStatus(cls, label) {
   if (b) b.className   = 'status-badge '+cls;
 }
 
-// ── Audio ─────────────────────────────────────────────────────────────────────
-const audio  = document.getElementById('audioEl');
-audio.volume = 0.8;
+// ── Audio (motore mpv nel backend Rust) ───────────────────────────────────────
+// Nessun tag <audio>: play/stop/volume passano da invoke() → mpv.rs.
+let _mpvVolume = 0.8;         // 0..1 in UI, convertito a 0..100 per mpv
+let _mpvWasPlaying = false;   // primo 'playing' = PLAY_START_OK, successivi = AUDIO_RECOVERED
 
 function getAudioState() {
-  if (!state.playing)       return 'stopped';
-  if (audio.error)          return 'error';
-  if (audio.readyState < 3) return 'buffering';
-  return 'playing';
+  if (!state.playing) return 'stopped';
+  switch (state.audioPhase) {
+    case 'playing':   return 'playing';
+    case 'buffering':
+    case 'silent':    return 'buffering';
+    case 'error':     return 'error';
+    default:          return 'buffering';
+  }
 }
 
 // ── Tauri invoke — no-op se non siamo in Tauri ────────────────────────────────
@@ -170,22 +175,21 @@ function play() {
   if (!state.brand) return;
   _playRequestedAt = Date.now();
   _lastTrackAt     = Date.now(); // evita LONG_SILENCE immediato su nuovo play
-  clearWatchdog();
-  // Setto playing=true PRIMA di audio.play() così l'evento 'playing' trova lo stato corretto
+  _mpvWasPlaying   = false;
   state.playing    = true;
   state.audioPhase = 'buffering';
   document.getElementById('btnPlay').textContent = '⏸';
   setStatus('buffering', 'BUFFERING...');
   showFallbackCover(); // mostra subito la cover fallback mentre aspettiamo ICY
   diag('PLAY_REQUEST', { audioState: 'buffering' });
-  audio.src = state.brand.streamUrl; audio.load();
-  audio.play().catch(e => {
-    // Autoplay bloccato
+  // Motore audio mpv: loadfile dello stream + avvio ramo PCM/FFT.
+  safeInvoke('mpv_set_volume', { volume: Math.round(_mpvVolume * 100) }).catch(()=>{});
+  safeInvoke('mpv_play', { url: state.brand.streamUrl }).catch(e => {
     state.playing    = false;
     state.audioPhase = 'stopped';
     document.getElementById('btnPlay').textContent = '▶';
-    setStatus('stopped', 'Premi ▶ per ascoltare');
-    log('[AUTOPLAY_BLOCKED] '+e.message);
+    setStatus('error', 'ERRORE MOTORE AUDIO');
+    log('[MPV_PLAY_ERR] '+e);
   });
   safeInvoke('start_icy', { url: state.brand.streamUrl }).catch(e => log('[ICY_ERR] '+e));
   log('[PLAY_ATTEMPT] '+state.brand.streamUrl);
@@ -197,8 +201,9 @@ function stop() {
   _playStartedAt    = 0;
   _playRequestedAt  = 0;
   diag('STOP_REQUEST', { audioState: 'stopped' });
-  audio.pause(); audio.src = '';
+  safeInvoke('mpv_stop').catch(()=>{});
   safeInvoke('stop_icy').catch(()=>{});
+  stopEq();
   state.playing = false; state.audioPhase = 'stopped';
   document.getElementById('coverWrap') && document.getElementById('coverWrap').classList.remove('playing');
   stopNeon();
@@ -436,53 +441,44 @@ function stopNeon() {
   if (cw) cw.style.removeProperty('--neon-color');
 }
 
-// ── Equalizer Web Audio ───────────────────────────────────────────────────────
-let audioCtx   = null;
-let analyser   = null;
+// ── Equalizer REALE — bande FFT calcolate in Rust (mpv PCM → rustfft) ─────────
+// Il backend emette l'evento "eq-bands" con un array 0..1 per banda; qui lo
+// disegniamo con smoothing e fade-out. Nessun dato finto.
 let eqRunning  = false;
-let smoothBars = null;
-let eqInited   = false;
+let smoothBars = null;             // Float32Array smussata per il rendering
+let _eqBands   = new Float32Array(0); // ultimo frame ricevuto da Rust
+let _eqCanvasReady = false;
 
-function initEq() {
-  if (eqInited) return !!analyser;
-  eqInited = true;
-  try {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const src = audioCtx.createMediaElementSource(audio);
-    analyser  = audioCtx.createAnalyser();
-    analyser.fftSize              = 128; // 64 bin
-    analyser.smoothingTimeConstant = 0.75;
-    src.connect(analyser);
-    analyser.connect(audioCtx.destination);
-    smoothBars = new Float32Array(analyser.frequencyBinCount).fill(0);
+function _ensureEqCanvas() {
+  if (_eqCanvasReady) return true;
+  const canvas = document.getElementById('eqCanvas');
+  if (!canvas) return false;
+  const dpr = window.devicePixelRatio || 1;
+  const W = 276, H = 44;
+  canvas.width  = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width  = W + 'px';
+  canvas.style.height = H + 'px';
+  canvas.getContext('2d').scale(dpr, dpr);
+  _eqCanvasReady = true;
+  return true;
+}
 
-    // Dimensiona il canvas a risoluzione corretta (Retina)
-    const canvas = document.getElementById('eqCanvas');
-    const dpr    = window.devicePixelRatio || 1;
-    const W = 300; const H = 44;
-    canvas.width  = W * dpr;
-    canvas.height = H * dpr;
-    canvas.style.width  = W + 'px';
-    canvas.style.height = H + 'px';
-    canvas.getContext('2d').scale(dpr, dpr);
-
-    log('[EQ_INIT] ok bin='+analyser.frequencyBinCount+' dpr='+dpr);
-    return true;
-  } catch (e) {
-    log('[EQ_INIT_ERR] '+e.message);
-    analyser = null;
-    return false;
+// Chiamata dal listener Tauri "eq-bands"
+function onEqBands(bands) {
+  if (!bands || !bands.length) return;
+  _eqBands = bands;
+  if (!smoothBars || smoothBars.length !== bands.length) {
+    smoothBars = new Float32Array(bands.length).fill(0);
   }
 }
 
 function startEq() {
   if (eqRunning) return;
-  if (!initEq()) return;
-  if (audioCtx.state === 'suspended') audioCtx.resume();
-  _eqZeroFrames = 0;
+  if (!_ensureEqCanvas()) return;
   eqRunning = true;
   drawEq();
-  log('[EQ_START]');
+  log('[EQ_START] motore=mpv-fft');
 }
 
 function stopEq() {
@@ -494,9 +490,8 @@ function stopEq() {
 function fadeOutEq() {
   const canvas = document.getElementById('eqCanvas');
   if (!canvas || !smoothBars) return;
-  const dpr = window.devicePixelRatio || 1;
-  const ctx  = canvas.getContext('2d');
-  const W = 300; const H = 44;
+  const ctx = canvas.getContext('2d');
+  const W = 276, H = 44;
   function step() {
     if (eqRunning) return;
     let any = false;
@@ -512,43 +507,20 @@ function fadeOutEq() {
   requestAnimationFrame(step);
 }
 
-let _eqZeroFrames = 0; // conta frame con analyser tutti zero → fallback simulato
-
-function _fakeEqData(out) {
-  // Visualizzatore simulato: onde sinusoidali sfasate per ogni banda
-  const t = performance.now() / 1000;
-  for (let i = 0; i < out.length; i++) {
-    const base = 0.18 + 0.30 * Math.exp(-i / (out.length * 0.4)); // enfasi sui bassi
-    const wave = Math.sin(t * (1.2 + i * 0.15) + i * 0.7) * 0.5 + 0.5;
-    const noise = Math.random() * 0.12;
-    out[i] = Math.min(1, Math.max(0, base * wave + noise)) * 255;
-  }
-}
-
 function drawEq() {
-  if (!eqRunning || !analyser) return;
+  if (!eqRunning) return;
   const canvas = document.getElementById('eqCanvas');
   if (!canvas) { eqRunning = false; return; }
   const ctx = canvas.getContext('2d');
-  const W = 300; const H = 44;
+  const W = 276, H = 44;
 
-  const data = new Uint8Array(analyser.frequencyBinCount);
-  analyser.getByteFrequencyData(data);
-
-  // Se l'analyser ritorna tutti zero per troppi frame (WKWebView non espone lo stream
-  // radio al pipeline Web Audio), usa un visualizzatore simulato
-  const allZero = data.every(v => v === 0);
-  if (allZero) {
-    _eqZeroFrames++;
-    if (_eqZeroFrames > 60) _fakeEqData(data); // dopo ~1s usa fake
-  } else {
-    _eqZeroFrames = 0;
-  }
-
-  const LERP_UP = 0.45; const LERP_DN = 0.14;
-  for (let i = 0; i < smoothBars.length; i++) {
-    const t = data[i] / 255;
-    smoothBars[i] += (t - smoothBars[i]) * (t > smoothBars[i] ? LERP_UP : LERP_DN);
+  const bands = _eqBands;
+  if (smoothBars && bands.length === smoothBars.length) {
+    const LERP_UP = 0.45, LERP_DN = 0.14;
+    for (let i = 0; i < smoothBars.length; i++) {
+      const t = bands[i];
+      smoothBars[i] += (t - smoothBars[i]) * (t > smoothBars[i] ? LERP_UP : LERP_DN);
+    }
   }
 
   ctx.clearRect(0, 0, W, H);
@@ -557,12 +529,11 @@ function drawEq() {
 }
 
 function renderEqBars(ctx, W, H) {
-  if (!smoothBars) return;
+  if (!smoothBars || !smoothBars.length) return;
   const primary = getComputedStyle(document.documentElement)
     .getPropertyValue('--primary').trim() || '#29ABE2';
 
-  // Usa solo i primi 2/3 dei bin (le alte frequenze sono poco significative sul radio mp3)
-  const BAR_COUNT = Math.floor(smoothBars.length * 0.65);
+  const BAR_COUNT = smoothBars.length;
   const GAP  = 2;
   const barW = (W - GAP * (BAR_COUNT - 1)) / BAR_COUNT;
 
@@ -583,44 +554,76 @@ function renderEqBars(ctx, W, H) {
   }
 }
 
-// ── Audio events ──────────────────────────────────────────────────────────────
-function wireAudioEvents() {
+// ── Stato motore audio mpv ─────────────────────────────────────────────────────
+// Riceve le fasi digerite da mpv.rs (evento "mpv-state") e le mappa su UI +
+// telemetria, mantenendo gli stessi eventi del vecchio flusso.
+function setCoverPlaying(v) {
   const coverWrap = document.getElementById('coverWrap');
-  const setCoverPlaying = v => coverWrap && coverWrap.classList.toggle('playing', v);
+  if (coverWrap) coverWrap.classList.toggle('playing', v);
+}
 
-  audio.addEventListener('playing', () => {
-    const wasErr = state.audioPhase==='error' || state.audioPhase==='stall';
-    const bufMs  = _playRequestedAt > 0 ? Date.now() - _playRequestedAt : null;
-    clearWatchdog();
-    _reconnectAttempt = 0;
-    if (!_playStartedAt) _playStartedAt = Date.now();
-    state.audioPhase = 'playing';
-    setStatus('playing','IN RIPRODUZIONE');
-    const ev    = wasErr ? 'AUDIO_RECOVERED' : 'PLAY_START_OK';
-    const extra = bufMs !== null ? { buffer_time_ms: bufMs } : null;
-    log('['+ev+'] buf='+bufMs+'ms'); diag(ev, { audioState:'playing', extra });
-    setCoverPlaying(true); startNeon();
-  });
-  audio.addEventListener('waiting', () => {
-    state.audioPhase = 'buffering'; setStatus('buffering','BUFFERING...');
-    log('[BUFFERING]'); diag('BUFFERING', { audioState:'buffering', issueType:'rebuffer' });
-    setCoverPlaying(false); stopNeon();
-    startWatchdog('rebuffer');
-  });
-  audio.addEventListener('stalled', () => {
-    state.audioPhase = 'stall'; log('[AUDIO_STALL]'); setCoverPlaying(false); stopNeon();
-    diag('AUDIO_STALL', { audioState:'error', issueType:'stall',
-      issueNote:'rs='+audio.readyState+' ns='+audio.networkState });
-    startWatchdog('stall');
-  });
-  audio.addEventListener('error', () => {
-    state.audioPhase = 'error'; setCoverPlaying(false); stopNeon();
-    const code = audio.error && audio.error.code;
-    const msg  = (audio.error && audio.error.message) || 'unknown';
-    setStatus('error','ERRORE STREAM'); log('[AUDIO_ERROR] code='+code+' '+msg);
-    diag('AUDIO_ERROR', { audioState:'error', issueType:'media_error_'+code, issueNote:msg });
-    startWatchdog('audio_error');
-  });
+function handleMpvState(payload) {
+  if (!state.playing && payload.phase !== 'idle') {
+    // stop richiesto ma arrivano ancora eventi in coda: ignora
+    return;
+  }
+  const phase = payload.phase;
+  switch (phase) {
+    case 'stream_open':
+      log('[STREAM_OK] mpv file-loaded');
+      diag('STREAM_OK', { audioState:'buffering' });
+      break;
+    case 'playing': {
+      const wasErr = state.audioPhase==='error' || state.audioPhase==='silent';
+      const bufMs  = _playRequestedAt > 0 ? Date.now() - _playRequestedAt : null;
+      _reconnectAttempt = 0;
+      if (!_playStartedAt) _playStartedAt = Date.now();
+      state.audioPhase = 'playing';
+      setStatus('playing','IN RIPRODUZIONE');
+      const first = !_mpvWasPlaying;
+      _mpvWasPlaying = true;
+      const ev    = (first && !wasErr) ? 'PLAY_START_OK' : 'AUDIO_RECOVERED';
+      const extra = bufMs !== null ? { buffer_time_ms: bufMs, cache_secs: payload.cache_secs } : null;
+      log('['+ev+'] buf='+bufMs+'ms'); diag(ev, { audioState:'playing', extra });
+      setCoverPlaying(true); startNeon(); startEq();
+      break;
+    }
+    case 'buffering':
+      state.audioPhase = 'buffering'; setStatus('buffering','BUFFERING...');
+      log('[BUFFERING]'); diag('BUFFERING', { audioState:'buffering', issueType:'rebuffer' });
+      setCoverPlaying(false); stopNeon();
+      break;
+    case 'silent':
+      // il watchdog Rust ha rilevato stallo (core-idle bloccato)
+      state.audioPhase = 'silent'; setStatus('buffering','RIAGGANCIO...');
+      log('[AUDIO_STALL] '+(payload.reason||'')+' stall_ms='+(payload.stall_ms||0));
+      diag('AUDIO_STALL', { audioState:'buffering', issueType:'watchdog_stall',
+        issueNote:'stall_ms='+(payload.stall_ms||0) });
+      setCoverPlaying(false); stopNeon();
+      break;
+    case 'ended':
+      state.audioPhase = 'buffering'; setStatus('buffering','STREAM INTERROTTO');
+      log('[STREAM_ENDED] eof'); setCoverPlaying(false); stopNeon();
+      break;
+    case 'error':
+      state.audioPhase = 'error'; setCoverPlaying(false); stopNeon();
+      setStatus('error','ERRORE STREAM'); log('[AUDIO_ERROR] '+(payload.reason||''));
+      diag('AUDIO_ERROR', { audioState:'error', issueType:'mpv_error',
+        issueNote:payload.reason||'unknown' });
+      break;
+    case 'idle':
+      // stop: già gestito da stop()
+      break;
+  }
+}
+
+// evento watchdog: mpv riavviato dal backend
+function handleMpvRestart(payload) {
+  const stallMs = payload.stall_ms || 0;
+  _reconnectAttempt = payload.attempt || (_reconnectAttempt + 1);
+  log('[RECONNECT] mpv restart reason='+payload.reason+' attempt='+_reconnectAttempt);
+  diag('RECONNECT', { audioState:'buffering', issueType:'watchdog_reconnect',
+    issueNote: payload.reason, extra: { stall_ms: stallMs, attempt: _reconnectAttempt } });
 }
 
 // ── Device / Network ─────────────────────────────────────────────────────────
@@ -645,12 +648,11 @@ function wireNetworkEvents() {
       diag('DEVICE_CHANGE', { audioState:getAudioState(), issueType:'device_change',
         issueNote:'wasPlaying='+state.playing });
       if (state.playing) {
-        const src = audio.src; audio.src = '';
+        // mpv riapre l'output sul nuovo device ricaricando lo stream
         await new Promise(r => setTimeout(r,300));
-        audio.src = src;
-        audio.play().catch(e => {
-          log('[DEVICE_CHANGE_FAIL] '+e.message);
-          diag('AUDIO_ERROR', { audioState:'error', issueType:'device_change_recover_failed', issueNote:e.message });
+        safeInvoke('mpv_play', { url: state.brand.streamUrl }).catch(e => {
+          log('[DEVICE_CHANGE_FAIL] '+e);
+          diag('AUDIO_ERROR', { audioState:'error', issueType:'device_change_recover_failed', issueNote:String(e) });
         });
       }
     });
@@ -711,8 +713,7 @@ function startHeartbeat() {
 async function init() {
   log('[INIT] start IS_TAURI='+IS_TAURI+' IS_DEV_BUILD='+IS_DEV_BUILD);
 
-  // 1. Wiring audio + DOM puri (nessuna chiamata Tauri, non possono fallire)
-  wireAudioEvents();
+  // 1. Wiring DOM puri (nessuna chiamata Tauri, non possono fallire)
   wireNetworkEvents();
   wireBrandDropdown();
 
@@ -722,7 +723,8 @@ async function init() {
   });
   document.getElementById('btnStop').addEventListener('click', stop);
   document.getElementById('volSlider').addEventListener('input', e => {
-    audio.volume = parseFloat(e.target.value);
+    _mpvVolume = parseFloat(e.target.value);
+    safeInvoke('mpv_set_volume', { volume: Math.round(_mpvVolume * 100) }).catch(()=>{});
   });
 
   const settingsPanel = document.getElementById('settingsPanel');
@@ -828,7 +830,16 @@ async function init() {
       document.getElementById('btnClose').addEventListener('click', () => window.close());
     }
 
-    // 4. ICY listeners
+    // 4a. mpv listeners (stato motore audio, watchdog, visualizer FFT)
+    try {
+      await listen('mpv-state',   ev => handleMpvState(ev.payload || {}));
+      await listen('mpv-restart', ev => handleMpvRestart(ev.payload || {}));
+      await listen('mpv-ready',   () => log('[MPV_READY] motore audio connesso'));
+      await listen('eq-bands',    ev => onEqBands((ev.payload && ev.payload.bands) || []));
+      log('[INIT] mpv listeners ok');
+    } catch (e) { log('[INIT] mpv listen fallito: '+e); }
+
+    // 4b. ICY listeners
     try {
       await listen('icy-stream', ev => {
         const type = ev.payload.type;

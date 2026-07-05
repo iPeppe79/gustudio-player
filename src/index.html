@@ -32,6 +32,8 @@
         <span class="live-tag">LIVE STREAM</span>
       </div>
       <div class="cover-gradient"></div>
+      <!-- Visualizer FFT reale (bande calcolate in Rust da mpv PCM) -->
+      <canvas id="eqCanvas" class="eq-canvas" width="300" height="44"></canvas>
     </div>
 
     <!-- Now playing -->
@@ -185,7 +187,6 @@
 
   </div>
 
-  <audio id="audioEl" preload="none"></audio>
   <button id="btnCopyLog" style="display:none"></button>
   <script type="module" src="main.js"></script>
 </body>

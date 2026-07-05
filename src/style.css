@@ -254,6 +254,20 @@ img {
   letter-spacing: 0.1px;
 }
 
+/* ── Visualizer FFT ───────────────────────────────────────────────────────────── */
+/* Sovrapposto in fondo alla cover: non altera il layout esistente. */
+.eq-canvas {
+  position: absolute;
+  left: 50%;
+  bottom: 4px;
+  transform: translateX(-50%);
+  width: 300px;
+  height: 44px;
+  pointer-events: none;
+  z-index: 3;
+  opacity: 0.92;
+}
+
 /* ── Controls ─────────────────────────────────────────────────────────────────── */
 .controls {
   display: flex;

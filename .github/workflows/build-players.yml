@@ -19,13 +19,21 @@ jobs:
         include:
           - name: macOS-arm64
             os: macos-latest      # Apple Silicon
+            triple: aarch64-apple-darwin
           - name: macOS-x64
             os: macos-13          # Intel
+            triple: x86_64-apple-darwin
           - name: Windows-x64
             os: windows-latest
+            triple: x86_64-pc-windows-msvc
 
     runs-on: ${{ matrix.os }}
     name: Build ${{ matrix.name }}
+
+    # Versione mpv imbarcata: DEVE essere la stessa su tutte e 3 le macchine
+    # (build disallineate = sintomo "si stoppa solo Windows").
+    env:
+      MPV_VERSION: "0.40.0"
 
     steps:
       - uses: actions/checkout@v4
@@ -41,11 +49,60 @@ jobs:
       - name: Install deps
         run: npm ci
 
+      # ── Sidecar mpv: un binario self-contained per arch, col nome-triple ──────
+      # I binari NON sono nel repo (sono grossi e per-arch). Qui li si procura in CI.
+      # NOTA: gli URL vanno confermati/aggiornati con build statiche reali della
+      # versione MPV_VERSION. Se falliscono, la build va corretta qui — non lasciare
+      # che produca un installer senza motore audio.
+      - name: Fetch mpv sidecar (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = "src-tauri/bin"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          # Build self-contained di shinchiro (mpv.exe). URL da fissare a una release
+          # ancorata a $env:MPV_VERSION.
+          $url = "${{ secrets.MPV_WIN_URL }}"
+          if (-not $url) { throw "Secret MPV_WIN_URL mancante: URL build mpv.exe Windows self-contained" }
+          Invoke-WebRequest -Uri $url -OutFile "mpv-win.7z"
+          & 7z x "mpv-win.7z" - ompv-win -y
+          $exe = Get-ChildItem -Path "mpv-win" -Recurse -Filter "mpv.exe" | Select-Object -First 1
+          Copy-Item $exe.FullName "$dir/mpv-${{ matrix.triple }}.exe"
+          & dumpbin /dependents "$dir/mpv-${{ matrix.triple }}.exe" 2>$null | Out-String | Write-Host
+
+      - name: Fetch mpv sidecar (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="src-tauri/bin"
+          mkdir -p "$dir"
+          url="${{ secrets.MPV_MAC_URL }}"
+          if [ -z "$url" ]; then
+            echo "::error::Secret MPV_MAC_URL mancante: URL build mpv statica ${{ matrix.triple }}"
+            exit 1
+          fi
+          curl -L "$url" -o mpv-mac.tar.gz
+          mkdir -p mpv-mac && tar -xzf mpv-mac.tar.gz -C mpv-mac
+          bin="$(find mpv-mac -type f -name mpv | head -n1)"
+          cp "$bin" "$dir/mpv-${{ matrix.triple }}"
+          chmod +x "$dir/mpv-${{ matrix.triple }}"
+          echo "Dipendenze dylib (devono essere di sistema, non della build machine):"
+          otool -L "$dir/mpv-${{ matrix.triple }}" || true
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
           # la chiave del player come SECRET, mai in chiaro nel repo
           PLAYER_API_KEY: ${{ secrets.PLAYER_API_KEY }}
+          # Firma macOS: il bundler firma anche il sidecar mpv se questi sono presenti.
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         # tauri-action builda e raccoglie gli installer nativi in automatico
 
       - name: Upload artifact

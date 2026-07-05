@@ -32,6 +32,9 @@
     "icon": [
       "icons/funside.icns",
       "icons/icon.png"
+    ],
+    "externalBin": [
+      "bin/mpv"
     ]
   }
 }

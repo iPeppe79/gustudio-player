@@ -21,8 +21,13 @@ Brand attuali:
 
 ## STORIA (perché siamo qui)
 Il player .NET+Avalonia+BASS ha generato centinaia di build divergenti. Decisione:
-**riscrittura in Tauri** — un codice, tutti gli OS (Intel, Silicon, Windows x64/ARM),
-motore audio = webview di sistema. Prototipo validato 02/07/2026.
+**riscrittura in Tauri** — un codice, tutti gli OS (Intel, Silicon, Windows x64/ARM).
+Prototipo validato 02/07/2026.
+
+Motore audio: inizialmente tag `<audio>` WebKit (leggero ma fragile: silenzio sotto
+stress rete, EQ impossibile per CORS). Dal **05/07/2026 → mpv** orchestrato dal backend
+Rust (stabile, reconnect, EQ reale via PCM+FFT), imbarcato come sidecar. Unisce il
+peso di Tauri alla robustezza del vecchio player Electron.
 
 ---
 
@@ -138,9 +143,11 @@ src/main.js          — logica JS principale (play/stop, ICY, telemetria, UI)
 src/index.html       — HTML con setup modal, settings panel, log panel
 src/style.css        — stile con neon CSS, status badge, cover
 src/public/funside.json — brand config (streamUrl, theme, colors)
-src-tauri/src/main.rs      — comandi Tauri (telemetry_init, telemetry_register, send_event)
+src-tauri/src/main.rs      — comandi Tauri (mpv_*, telemetry_*, send_event, ExitRequested→mpv.shutdown)
+src-tauri/src/mpv.rs       — MOTORE AUDIO: spawn mpv, IPC socket, watchdog, PCM→FFT→eq-bands
 src-tauri/src/telemetry.rs — PlayerInfo, post_event, do_register, heartbeat loop
 src-tauri/src/icy.rs       — lettore ICY metadata (Rust)
+src-tauri/bin/             — sidecar mpv per-arch (NON in git) + README + fetch-mpv.sh
 .env                 — PLAYER_API_KEY=pc-radio-2026 (mai committare)
 ```
 
@@ -197,9 +204,18 @@ Allineato a `.NET NowPlayingService.IsNonMusical`:
 
 ---
 
-## STATO DEBUG — 2026-07-04
+## STATO DEBUG — 2026-07-05
 
-### Tutto funzionante ✓
+### Sessione 2026-07-05 — migrazione a mpv
+- `<audio>` WebKit → **mpv** nel backend Rust (vedi sez. "Motore audio — mpv").
+- Watchdog anti-silenzio + `--network-timeout=10` + reconnect ffmpeg.
+- EQ reale rustfft (canvas eqCanvas aggiunto ex-novo).
+- `cargo check` pulito, `npm run build` ok. mpv verificato sullo stream funside reale
+  (core-idle=false, titolo live, cache che avanza). PCM-stdout e watchdog live da provare.
+- Fix server: `radio` — `rows.join('\r\n')` nel template Python rompeva la stringa JS
+  (CR/LF letterali) → stazioni invisibili. Corretto in `\\r\\n` (commit VPS 4e69c14f).
+
+### Tutto funzionante ✓ (base pre-mpv, 2026-07-04)
 - Audio, ICY metadata, cover, setup modal, drag finestra
 - Crash macOS 26 risolto (rimosso RAF)
 - Watchdog auto-reconnect con backoff esponenziale (5s→10s→20s→40s)
@@ -210,17 +226,39 @@ Allineato a `.NET NowPlayingService.IsNonMusical`:
 - Player rimane online nel pannello ✓ (api_player_health aggiorna last_seen)
 - Export CSV brani/spot nel pannello ✓
 
-### Motore audio — VERITÀ
-**Il motore audio è il tag `<audio>` WebKit** (`src/index.html:188`, `src/main.js:76-182`).
-NON è mpv. La stringa `audio_engine: "mpv"` in `telemetry.rs:126` era hardcoded
-fuorviante — corretta a `"webaudio"` il 2026-07-04.
+### Motore audio — mpv (dal 2026-07-05, STRADA A implementata)
+**Il motore audio è mpv**, orchestrato dal backend Rust (`src-tauri/src/mpv.rs`).
+Il tag `<audio>` è stato RIMOSSO. Play/stop/volume → `invoke()` → mpv via socket IPC.
 
-EQ attuale è **FAKE** (`_fakeEqData` in main.js) per limite CORS del webview WebKit
-che non espone lo stream radio al pipeline Web Audio API.
+- `mpv.rs`: spawn binario per-arch, IPC JSON (Unix socket / named pipe Win),
+  `observe_property` (core-idle, demuxer-cache-duration, pause, playback-time).
+- **Watchdog anti-silenzio**: se `core-idle` bloccato >8s o cache ferma o mpv esce →
+  KILL+RESTART automatico + ricarica stream. Logga `RECONNECT`/`AUDIO_STALL` con `stall_ms`.
+  Flag mpv: reconnect ffmpeg + **`--network-timeout=10`** (mancava nel vecchio Electron).
+- **EQ REALE**: 2° processo mpv → PCM float32 mono su stdout → `rustfft` (Hann, STFT
+  ~60fps) → 48 bande log → evento `eq-bands` → canvas. `_fakeEqData` eliminato.
+  NB: il `<canvas id="eqCanvas">` non esisteva in index.html (per questo il visualizer
+  non si vedeva) — aggiunto, sovrapposto in fondo alla cover.
+- `telemetry.rs`: `audio_engine` ora = `crate::mpv::AUDIO_ENGINE` (`"mpv"`), non hardcoded.
+- Eventi Rust→JS: `mpv-state {phase}`, `mpv-restart`, `mpv-ready`, `eq-bands`.
+  `handleMpvState()` in main.js mappa le fasi su UI + telemetria (PLAY_START_OK,
+  BUFFERING, AUDIO_STALL, AUDIO_RECOVERED, ...). Il vecchio watchdog JS lato `<audio>`
+  è stato tolto: la resilienza è ora tutta lato Rust/mpv.
 
-**STRADA A — prossimo sprint**: mpv come processo Rust → stdout PCM → RustFFT →
-canvas, che darebbe EQ reale E probabilmente risolverebbe il bug-silenzio
-migliorando la gestione stream.
+### Binario mpv (sidecar) — PUNTO APERTO PACKAGING
+`tauri.conf.json` → `externalBin: ["bin/mpv"]`. Servono 3 binari **self-contained**
+in `src-tauri/bin/` col nome-triple (`mpv-aarch64-apple-darwin`, `mpv-x86_64-apple-darwin`,
+`mpv-x86_64-pc-windows-msvc.exe`). NON committati (`.gitignore`). Vedi `bin/README.md`.
+- Dev/locale: `bin/fetch-mpv.sh` copia il mpv di Homebrew (⚠ NON portabile — dipende da
+  dylib Homebrew, solo per test su questa macchina). Fallback runtime: `mpv` nel PATH.
+- CI: step "Fetch mpv sidecar" in build-players.yml (URL da fissare: secrets MPV_WIN_URL/
+  MPV_MAC_URL). I 3 binari devono essere STESSA versione mpv >=0.38.
+- Firma macOS: predisposta in CI (secrets APPLE_*), non ancora testata.
+
+### DA VERIFICARE ancora (non provato live)
+- **PCM su stdout `--ao-pcm-file=-`**: se mpv non scrive su `-`, l'FFT resta a zero →
+  fallback a file/FIFO temp come l'Electron. Confermare in `tauri dev`/DMG.
+- Watchdog live "stacca rete → riaggancio": logica ok, dimostrazione GUI non eseguita.
 
 ### Fix applicati in questa sessione (2026-07-04)
 | Fix | Lato | Dettaglio |
