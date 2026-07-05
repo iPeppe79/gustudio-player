@@ -9,17 +9,18 @@
     "beforeBuildCommand": "npm run build"
   },
   "app": {
-    "macOSPrivateApi": false,
+    "macOSPrivateApi": true,
     "withGlobalTauri": true,
     "windows": [
       {
         "title": "FunSide Radio",
-        "width": 300,
-        "height": 490,
+        "width": 320,
+        "height": 512,
         "resizable": false,
         "decorations": false,
-        "transparent": false,
-        "center": true
+        "transparent": true,
+        "center": true,
+        "shadow": false
       }
     ],
     "security": {

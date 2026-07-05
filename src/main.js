@@ -454,7 +454,7 @@ function _ensureEqCanvas() {
   const canvas = document.getElementById('eqCanvas');
   if (!canvas) return false;
   const dpr = window.devicePixelRatio || 1;
-  const W = 276, H = 44;
+  const W = 276, H = 36;
   canvas.width  = W * dpr;
   canvas.height = H * dpr;
   canvas.style.width  = W + 'px';
@@ -491,7 +491,7 @@ function fadeOutEq() {
   const canvas = document.getElementById('eqCanvas');
   if (!canvas || !smoothBars) return;
   const ctx = canvas.getContext('2d');
-  const W = 276, H = 44;
+  const W = 276, H = 36;
   function step() {
     if (eqRunning) return;
     let any = false;
@@ -512,7 +512,7 @@ function drawEq() {
   const canvas = document.getElementById('eqCanvas');
   if (!canvas) { eqRunning = false; return; }
   const ctx = canvas.getContext('2d');
-  const W = 276, H = 44;
+  const W = 276, H = 36;
 
   const bands = _eqBands;
   if (smoothBars && bands.length === smoothBars.length) {
@@ -528,28 +528,72 @@ function drawEq() {
   requestAnimationFrame(drawEq);
 }
 
+// Barre colorate: equalizzatore classico. Ogni barra ha un colore lungo l'asse
+// blu→giallo→rosso (colori brand funside), cima arrotondata e riflesso sotto.
+const _EQ_BAR_COUNT = 22; // non troppo fitto
+
+// interpolazione colore blu→giallo→rosso su t∈[0,1]
+function _eqColor(t) {
+  const stops = [
+    [0.0, [41, 171, 226]],   // #29ABE2 blu
+    [0.5, [245, 197, 66]],   // #F5C542 giallo
+    [1.0, [229, 62, 45]],    // #E53E2D rosso
+  ];
+  let a = stops[0], b = stops[stops.length - 1];
+  for (let i = 0; i < stops.length - 1; i++) {
+    if (t >= stops[i][0] && t <= stops[i + 1][0]) { a = stops[i]; b = stops[i + 1]; break; }
+  }
+  const f = (t - a[0]) / (b[0] - a[0] || 1);
+  const c = [0, 1, 2].map(k => Math.round(a[1][k] + (b[1][k] - a[1][k]) * f));
+  return c;
+}
+
 function renderEqBars(ctx, W, H) {
   if (!smoothBars || !smoothBars.length) return;
-  const primary = getComputedStyle(document.documentElement)
-    .getPropertyValue('--primary').trim() || '#29ABE2';
+  const src = smoothBars;
+  const N = _EQ_BAR_COUNT;
+  const gap = 3;
+  const barW = (W - gap * (N - 1)) / N;
+  const midY = H * 0.60;          // linea di base (spazio sotto per il riflesso)
+  const maxUp = midY - 1;
+  const maxDown = H - midY - 1;
 
-  const BAR_COUNT = smoothBars.length;
-  const GAP  = 2;
-  const barW = (W - GAP * (BAR_COUNT - 1)) / BAR_COUNT;
+  for (let i = 0; i < N; i++) {
+    // media del gruppo di bin corrispondente
+    const lo = Math.floor(i * src.length / N);
+    const hi = Math.max(lo + 1, Math.floor((i + 1) * src.length / N));
+    let s = 0, c = 0;
+    for (let j = lo; j < hi && j < src.length; j++) { s += src[j]; c++; }
+    const v = c ? s / c : 0;
 
-  for (let i = 0; i < BAR_COUNT; i++) {
-    const v  = smoothBars[i];
-    const bH = Math.max(2, v * H);
-    const x  = i * (barW + GAP);
-    const y  = H - bH;
+    const x = i * (barW + gap);
+    const bH = Math.max(2, v * maxUp);
+    const t = i / (N - 1);
+    const [r, g, b] = _eqColor(t);
+    const r2 = Math.round(barW / 2);
 
-    const grad = ctx.createLinearGradient(0, y, 0, H);
-    grad.addColorStop(0, primary + 'DD');
-    grad.addColorStop(1, primary + '33');
+    // barra principale con gradiente verticale + glow
+    const grad = ctx.createLinearGradient(0, midY - bH, 0, midY);
+    grad.addColorStop(0, `rgba(${r},${g},${b},1)`);
+    grad.addColorStop(1, `rgba(${r},${g},${b},0.55)`);
     ctx.fillStyle = grad;
+    ctx.shadowColor = `rgba(${r},${g},${b},0.6)`;
+    ctx.shadowBlur = 6;
     ctx.beginPath();
-    if (ctx.roundRect) ctx.roundRect(x, y, barW, bH, [2, 2, 0, 0]);
-    else ctx.rect(x, y, barW, bH);
+    if (ctx.roundRect) ctx.roundRect(x, midY - bH, barW, bH, [r2, r2, 1, 1]);
+    else ctx.rect(x, midY - bH, barW, bH);
+    ctx.fill();
+
+    // riflesso sotto la linea di base (più corto e sfumato)
+    ctx.shadowBlur = 0;
+    const rH = Math.min(maxDown, bH * 0.4);
+    const refl = ctx.createLinearGradient(0, midY, 0, midY + rH);
+    refl.addColorStop(0, `rgba(${r},${g},${b},0.28)`);
+    refl.addColorStop(1, `rgba(${r},${g},${b},0)`);
+    ctx.fillStyle = refl;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(x, midY + 1, barW, rH, [1, 1, r2, r2]);
+    else ctx.rect(x, midY + 1, barW, rH);
     ctx.fill();
   }
 }
