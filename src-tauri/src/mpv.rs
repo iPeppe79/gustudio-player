@@ -88,7 +88,9 @@ impl MpvState {
             return; // già avviato
         }
         let inner = self.inner.clone();
-        tokio::spawn(async move { supervisor(inner).await });
+        // async_runtime di Tauri: init() è chiamata da setup() (contesto sync),
+        // dove tokio::spawn panicherebbe ("no reactor running").
+        tauri::async_runtime::spawn(async move { supervisor(inner).await });
     }
 
     fn send_cmd(&self, value: serde_json::Value) {
