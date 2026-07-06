@@ -234,6 +234,9 @@ Allineato a `.NET NowPlayingService.IsNonMusical`:
 - ARM64 rebuild eseguito da Mac Intel con toolchain rustup e target `aarch64-apple-darwin`;
   sidecar `mpv-aarch64-apple-darwin` estratto dal DMG ARM precedente. DMG ARM resta circa
   6 MB perché contiene un mpv arm64 singolo/self-contained, senza cartella `lib/`.
+- Rebuild finale ripetuto su richiesta: rigenerati x64 e arm64, entrambi con layout DMG
+  `FunSide Radio.app` + `Applications -> /Applications`, e ricopiati nella cartella
+  Google Drive `GUSTUDIO79/PLAYER/FUNSIDE`.
 
 ### Sessione 2026-07-05 — migrazione a mpv
 - `<audio>` WebKit → **mpv** nel backend Rust (vedi sez. "Motore audio — mpv").
