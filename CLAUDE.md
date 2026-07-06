@@ -291,6 +291,24 @@ rispetto all'audio; il watchdog non interveniva". Diagnosi: **cache mpv grande (
   in `BUFFERING` mentre ICY continua a mostrare titoli. DMG x64 corretto ricreato manualmente
   il 06/07/2026 alle 21:11, peso ≈28 MB, copiato in Google Drive.
 
+### Sessione 2026-07-06 (notte) — IP pubblico/privato + BUILD WINDOWS via CI
+- **Telemetria IP**: il client (merge Intel) invia `local_ip` (IP privato, UDP-connect trick).
+  Server: `api_player_health` ora salva `local_ip` + `public_ip` (da **X-Real-IP**, perché il
+  vhost gus79.it NON manda X-Forwarded-For) + `ip`. Mostrati in report+modal. Anche `username`
+  (utente OS) e `mac` erano scartati dal server → ora salvati. Fix sysBox: legge l'APP_START
+  più RECENTE (prima prendeva il più vecchio, vuoto).
+- **BUILD WINDOWS FUNZIONA (via GitHub Actions)** — workflow dedicato `.github/workflows/
+  build-windows.yml` (windows-latest, `workflow_dispatch`). Scarica da solo un mpv
+  self-contained da `zhongfly/mpv-winbuild` (asset `mpv-x86_64-*.7z`, no -v3), lo mette come
+  sidecar `bin/mpv-x86_64-pc-windows-msvc.exe`, poi `tauri-action`. Produce `.exe` (NSIS 35MB)
+  + `.msi` (47MB) → in Drive PLAYER/FUNSIDE. `gh workflow run "Build Windows"` per ributtare.
+  - Fix necessario: mancava **`icons/icon.ico`** (Windows lo esige) → generato da icon.png (PIL,
+    7 dimensioni) e committato + aggiunto a `bundle.icon`.
+  - objc2 (maschera finestra macOS) è gated `[target.'cfg(target_os="macos")']` → non rompe Win.
+  - **DA VERIFICARE su Windows reale** (non testato qui): (1) parte? (2) audio mpv ok o mpv.exe
+    reclama DLL accanto (come le dylib su Intel mac) → in tal caso imbarcare le lib di mpv;
+    (3) non firmato → SmartScreen. EQ resta disattivo su Windows (start_pcm `return` su cfg).
+
 ---
 
 ## STATO DEBUG — 2026-07-05
