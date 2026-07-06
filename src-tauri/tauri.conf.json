@@ -32,7 +32,8 @@
     "targets": "all",
     "icon": [
       "icons/funside.icns",
-      "icons/icon.png"
+      "icons/icon.png",
+      "icons/icon.ico"
     ],
     "externalBin": [
       "bin/mpv"
