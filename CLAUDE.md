@@ -285,6 +285,11 @@ rispetto all'audio; il watchdog non interveniva". Diagnosi: **cache mpv grande (
 - **Ordine init mpv**: il supervisore mpv non parte più in `setup()` Rust; viene avviato
   da `mpv_init` dopo la registrazione dei listener JS, così `MPV_READY`/warning/errori non
   si perdono all'avvio.
+- **DMG Intel x64 valido**: il bundle deve includere anche `FunSide Radio.app/Contents/MacOS/lib`
+  (≈48 MB di dylib x86_64 richieste da `mpv`). Se il DMG x64 pesa ≈6 MB, è rotto: `mpv`
+  fallisce con `Library not loaded: @executable_path/lib/libass.9.dylib` e il player resta
+  in `BUFFERING` mentre ICY continua a mostrare titoli. DMG x64 corretto ricreato manualmente
+  il 06/07/2026 alle 21:11, peso ≈28 MB, copiato in Google Drive.
 
 ---
 
