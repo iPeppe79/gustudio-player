@@ -313,11 +313,6 @@ fn main() {
         .manage(MpvState::new())
         .setup(|app| {
             apply_native_window_mask(app);
-
-            // Avvia subito il supervisore mpv così il motore è pronto al primo play.
-            use tauri::Manager;
-            let mpv = app.state::<MpvState>();
-            mpv.init(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

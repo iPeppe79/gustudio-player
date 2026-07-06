@@ -282,6 +282,9 @@ rispetto all'audio; il watchdog non interveniva". Diagnosi: **cache mpv grande (
 - **Buffering senza audio**: aggiunto log immediato `[MPV_STATS]`/`[MPV_PLAY_OK]` con
   `alive`, `cache_secs`, `last_warn`. Se ICY aggiorna i titoli ma non arriva `PLAY_START_OK`,
   il problema è nel ramo audio mpv (spawn/output/stream), non nei metadata ICY.
+- **Ordine init mpv**: il supervisore mpv non parte più in `setup()` Rust; viene avviato
+  da `mpv_init` dopo la registrazione dei listener JS, così `MPV_READY`/warning/errori non
+  si perdono all'avvio.
 
 ---
 
