@@ -206,6 +206,21 @@ Allineato a `.NET NowPlayingService.IsNonMusical`:
 
 ## STATO DEBUG — 2026-07-05
 
+### Sessione 2026-07-06 — build FunSide Intel x64 con mpv
+- Repo clonato su Mac Intel (`x86_64`), `main` aggiornato (`git pull`: already up to date).
+- Build eseguita con `BRAND=funside npm run tauri build`.
+  Output generato: `src-tauri/target/release/bundle/dmg/FunSide Radio_0.1.0_x64.dmg`.
+- DMG copiato in Google Drive:
+  `/Volumes/5TBUSB3/CLOUDING/GDRIVE PEPPE/GUSTUDIO79/PLAYER/FUNSIDE/FunSide Radio_0.1.0_x64_mpv.dmg`.
+- Sidecar confermato x86_64:
+  `src-tauri/bin/mpv-x86_64-apple-darwin` → `Mach-O 64-bit executable x86_64`.
+- Smoke test app bundle: OK. Dopo `open .../FunSide Radio.app`, verificati 2 processi
+  `Contents/MacOS/mpv`: mpv audio principale + mpv PCM/EQ.
+- Nota packaging: `brew install mpv` NON completato su questo Mac perché Homebrew richiede
+  Xcode.app completo per compilare `mpv` su macOS 12; le sole Command Line Tools non bastano.
+  Per sbloccare la build locale è stato usato un mpv prebuilt x86_64 con cartella `lib/`
+  inclusa dentro `Contents/MacOS`. App/DMG restano non firmati.
+
 ### Sessione 2026-07-05 — migrazione a mpv
 - `<audio>` WebKit → **mpv** nel backend Rust (vedi sez. "Motore audio — mpv").
 - Watchdog anti-silenzio + `--network-timeout=10` + reconnect ffmpeg.
