@@ -246,9 +246,9 @@ Allineato a `.NET NowPlayingService.IsNonMusical`:
   centrato realmente sulla finestra e cover di nuovo a 272px.
 - Eliminato doppio layer visibile su sfondi chiari: finestra Tauri portata a 300x502,
   `html/body` allineati alla stessa misura e rimossa ombra esterna CSS da `#app`.
-- Raffinato bordo finestra: finestra tornata a 320x524 per dare spazio a un'aura CSS
-  arrotondata (`body::before`) dietro il player 300x502; evita che gli angoli trasparenti
-  leggano come pixel/layer difettosi su sfondi chiari.
+- Rimosso definitivamente il tentativo di aura: finestra e player restano 300x502,
+  nessun margine/ombra esterna; all'avvio JS forza background window+webview a RGBA
+  trasparente via API Tauri (`setBackgroundColor`) con permission dedicata.
 
 ### Sessione 2026-07-05 — migrazione a mpv
 - `<audio>` WebKit → **mpv** nel backend Rust (vedi sez. "Motore audio — mpv").

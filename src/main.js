@@ -2,6 +2,7 @@ import { invoke }           from '@tauri-apps/api/core';
 import { convertFileSrc }   from '@tauri-apps/api/core';
 import { listen }           from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { getCurrentWebview } from '@tauri-apps/api/webview';
 
 /* global __BRAND__, __BUILD_MODE__ */
 const COMPILED_BRAND = __BRAND__;
@@ -864,6 +865,13 @@ async function init() {
   if (IS_TAURI) {
     try {
       const win = getCurrentWindow();
+      try {
+        await win.setBackgroundColor([0, 0, 0, 0]);
+        await getCurrentWebview().setBackgroundColor([0, 0, 0, 0]);
+        log('[INIT] transparent window/webview background ok');
+      } catch (e) {
+        log('[INIT] transparent background API non disponibile: '+e);
+      }
       document.getElementById('btnClose').addEventListener('click', () => win.close());
       document.getElementById('btnMini').addEventListener('click',  () => win.minimize());
       try {
