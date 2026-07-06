@@ -272,6 +272,17 @@ rispetto all'audio; il watchdog non interveniva". Diagnosi: **cache mpv grande (
 - DMG copiato su Google Drive:
   `/Volumes/5TBUSB3/CLOUDING/GDRIVE PEPPE/GUSTUDIO79/PLAYER/FUNSIDE/FunSide Radio_0.1.0_x64_mpv.dmg`.
 
+### Sessione 2026-07-06 (sera) — build label + pannello impostazioni + diagnosi mpv
+- **Build/commit visibile**: Vite inietta `__BUILD_COMMIT__` da `git rev-parse --short=8 HEAD`.
+  Il player mostra e invia `0.1.0 #<commit>` come `version`, quindi il pannello server non
+  resta più fermo al solo `Player 0.1.0`.
+- **Pannello impostazioni**: background reso opaco (niente `color-mix` come unico valore)
+  per evitare che cover/player sotto restino visibili durante l'apertura del pannello.
+- **Trasparenza webview**: aggiunto permesso Tauri `core:webview:allow-set-webview-background-color`.
+- **Buffering senza audio**: aggiunto log immediato `[MPV_STATS]`/`[MPV_PLAY_OK]` con
+  `alive`, `cache_secs`, `last_warn`. Se ICY aggiorna i titoli ma non arriva `PLAY_START_OK`,
+  il problema è nel ramo audio mpv (spawn/output/stream), non nei metadata ICY.
+
 ---
 
 ## STATO DEBUG — 2026-07-05

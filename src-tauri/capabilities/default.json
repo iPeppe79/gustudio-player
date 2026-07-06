@@ -12,6 +12,7 @@
     "core:window:allow-set-background-color",
     "core:window:allow-start-dragging",
     "core:window:allow-destroy",
+    "core:webview:allow-set-webview-background-color",
     "fs:default",
     "http:default"
   ]

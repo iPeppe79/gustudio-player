@@ -363,16 +363,19 @@ input[type=range]::-webkit-slider-thumb {
 /* ── Panels (settings, log) ───────────────────────────────────────────────────── */
 .panel {
   position: absolute; inset: 0;
-  background: color-mix(in srgb, var(--bg) 97%, #000 3%);
+  background: #080910;
+  background: var(--bg);
   display: flex; flex-direction: column;
   z-index: 10;
   overflow: hidden;
   border-radius: var(--radius);
+  isolation: isolate;
 }
 .panel-header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 12px 16px;
-  border-bottom: 1px solid rgba(255,255,255,0.05);
+  background: rgba(0,0,0,0.38);
+  border-bottom: 1px solid rgba(255,255,255,0.08);
   font-weight: 600; font-size: 13px;
   flex-shrink: 0;
 }
@@ -385,6 +388,8 @@ input[type=range]::-webkit-slider-thumb {
 
 .panel-body {
   flex: 1; overflow-y: auto; padding: 14px;
+  background: #080910;
+  background: var(--bg);
   display: flex; flex-direction: column; gap: 7px;
 }
 .panel-body label {

@@ -4,10 +4,12 @@ import { listen }           from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 
-/* global __BRAND__, __BUILD_MODE__ */
+/* global __BRAND__, __BUILD_MODE__, __BUILD_COMMIT__ */
 const COMPILED_BRAND = __BRAND__;
 const IS_DEV_BUILD   = __BUILD_MODE__ === 'dev';
 const VERSION      = '0.1.0';
+const BUILD_COMMIT = __BUILD_COMMIT__ || '';
+const BUILD_LABEL  = VERSION + (BUILD_COMMIT ? ' #' + BUILD_COMMIT : '');
 const DEFAULT_ICY_DELAY_MS = 4000;
 let   ICY_DELAY_MS = parseInt(localStorage.getItem('icy_delay_ms') || String(DEFAULT_ICY_DELAY_MS), 10);
 if (ICY_DELAY_MS === 18000) {
@@ -184,7 +186,7 @@ function applyBrand(brand) {
   t.onerror = () => { document.getElementById('logoStatus').textContent = '/'+brand.brandId+'-logo.png non trovato'; };
   t.src = '/'+brand.brandId+'-logo.png';
   document.getElementById('fallbackName').textContent = brand.productName;
-  document.getElementById('brandLabel').textContent   = brand.brandId+'  v'+VERSION;
+  document.getElementById('brandLabel').textContent   = brand.brandId+'  v'+BUILD_LABEL;
   document.title = brand.windowTitle || brand.productName;
   document.getElementById('streamUrlInput').value = brand.streamUrl;
   const ef = brandFallbacks[brand.brandId];
@@ -205,7 +207,16 @@ function play() {
   diag('PLAY_REQUEST', { audioState: 'buffering' });
   // Motore audio mpv: loadfile dello stream + avvio ramo PCM/FFT.
   safeInvoke('mpv_set_volume', { volume: Math.round(_mpvVolume * 100) }).catch(()=>{});
-  safeInvoke('mpv_play', { url: state.brand.streamUrl }).catch(e => {
+  safeInvoke('mpv_play', { url: state.brand.streamUrl }).then(async () => {
+    try {
+      const stats = await safeInvoke('mpv_stats');
+      if (stats) {
+        log('[MPV_PLAY_OK] alive='+stats.alive+' cache='+(stats.cache_secs ?? 0)+'s warn='+(stats.last_warn || '-'));
+      }
+    } catch(e) {
+      log('[MPV_STATS_ERR] '+e);
+    }
+  }).catch(e => {
     state.playing    = false;
     state.audioPhase = 'stopped';
     document.getElementById('btnPlay').textContent = '▶';
@@ -312,7 +323,7 @@ async function doRegister() {
     await safeInvoke('telemetry_register', {
       uuid:      uuid,
       brand:     (state.brand && state.brand.brandId) || '',
-      version:   VERSION,
+      version:   BUILD_LABEL,
       stationId: streamToStationId((state.brand && state.brand.streamUrl) || ''),
       name:      d.insegna || '',
       password:  d.password || '',
@@ -364,7 +375,7 @@ async function checkFirstRun() {
         await safeInvoke('telemetry_register', {
           uuid:      uuid,
           brand:     (state.brand && state.brand.brandId) || '',
-          version:   VERSION,
+          version:   BUILD_LABEL,
           stationId: streamToStationId((state.brand && state.brand.streamUrl) || ''),
           name:      d.insegna,
           password:  d.password,
@@ -764,7 +775,7 @@ async function troubleshootExtra() {
   try { mpv = await safeInvoke('mpv_stats') || {}; } catch(e) {}
   const scr = window.screen || {};
   return {
-    app_version: VERSION,
+    app_version: BUILD_LABEL,
     audio_engine: mpv.engine || 'mpv',
     mpv_alive:  mpv.alive,
     cache_secs: mpv.cache_secs,
@@ -888,7 +899,7 @@ async function init() {
   document.getElementById('btnLogClose').addEventListener('click', () => { logPanel.hidden=true; });
   document.getElementById('btnCopyLog').addEventListener('click', copyLog);
   document.getElementById('btnCopyLogInPanel').addEventListener('click', copyLog);
-  document.getElementById('installedVersion').textContent = VERSION;
+  document.getElementById('installedVersion').textContent = BUILD_LABEL;
   document.getElementById('playerUuid').textContent       = uuid;
 
   // ICY delay slider — di default AUTO (segue la cache mpv). Toccarlo passa a manuale.
@@ -966,6 +977,9 @@ async function init() {
         }
       });
       log('[INIT] mpv listeners ok');
+      await safeInvoke('mpv_init').catch(e => log('[MPV_INIT_ERR] '+e));
+      const stats = await safeInvoke('mpv_stats').catch(() => null);
+      if (stats) log('[MPV_STATS] alive='+stats.alive+' cache='+(stats.cache_secs ?? 0)+'s warn='+(stats.last_warn || '-'));
     } catch (e) { log('[INIT] mpv listen fallito: '+e); }
 
     // 4b. ICY listeners
@@ -1017,7 +1031,7 @@ async function init() {
   await safeInvoke('telemetry_init', {
     uuid:      uuid,
     brand:     brand.brandId,
-    version:   VERSION,
+    version:   BUILD_LABEL,
     stationId: streamToStationId(brand.streamUrl || ''),
     name:      _sd.insegna || '',
   }).catch(e => log('[TELE_INIT_ERR] '+e));
