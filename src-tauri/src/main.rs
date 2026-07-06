@@ -11,6 +11,53 @@ use telemetry::TelemetryState;
 
 // ── mpv (motore audio) ──────────────────────────────────────────────────────────
 
+#[cfg(target_os = "macos")]
+fn apply_native_window_mask(app: &tauri::App) {
+    use objc2::msg_send;
+    use objc2_app_kit::{NSColor, NSWindow};
+    use tauri::Manager;
+
+    let Some(window) = app.get_webview_window("main") else {
+        eprintln!("[window-mask] main window not found");
+        return;
+    };
+
+    let ns_window = match window.ns_window() {
+        Ok(ptr) => ptr as *mut NSWindow,
+        Err(err) => {
+            eprintln!("[window-mask] ns_window unavailable: {err}");
+            return;
+        }
+    };
+
+    unsafe {
+        let ns_window = &*ns_window;
+        let clear = NSColor::clearColor();
+
+        ns_window.setOpaque(false);
+        ns_window.setBackgroundColor(Some(&clear));
+        let _: () = msg_send![ns_window, setHasShadow: false];
+
+        if let Some(content_view) = ns_window.contentView() {
+            apply_rounded_clip_to_view(&content_view);
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn apply_native_window_mask(_app: &tauri::App) {}
+
+#[cfg(target_os = "macos")]
+unsafe fn apply_rounded_clip_to_view(view: &objc2_app_kit::NSView) {
+    use objc2::msg_send;
+
+    view.setWantsLayer(true);
+    if let Some(layer) = view.layer() {
+        let _: () = msg_send![&*layer, setMasksToBounds: true];
+        let _: () = msg_send![&*layer, setCornerRadius: 18.0_f64];
+    }
+}
+
 #[tauri::command]
 async fn mpv_init(state: tauri::State<'_, MpvState>, app: tauri::AppHandle) -> Result<(), ()> {
     state.init(app);
@@ -249,6 +296,8 @@ fn main() {
         .manage(TelemetryState::new())
         .manage(MpvState::new())
         .setup(|app| {
+            apply_native_window_mask(app);
+
             // Avvia subito il supervisore mpv così il motore è pronto al primo play.
             use tauri::Manager;
             let mpv = app.state::<MpvState>();

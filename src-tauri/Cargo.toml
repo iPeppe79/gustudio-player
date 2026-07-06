@@ -35,6 +35,10 @@ os_info = "3"
 chrono = { version = "0.4", features = ["serde"] }
 rustfft = "6"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["NSColor", "NSView", "NSWindow", "objc2-quartz-core"] }
+
 [profile.release]
 panic = "abort"
 codegen-units = 1

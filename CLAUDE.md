@@ -249,6 +249,9 @@ Allineato a `.NET NowPlayingService.IsNonMusical`:
 - Rimosso definitivamente il tentativo di aura: finestra e player restano 300x502,
   nessun margine/ombra esterna; all'avvio JS forza background window+webview a RGBA
   trasparente via API Tauri (`setBackgroundColor`) con permission dedicata.
+- Aggiunto fix nativo macOS in Rust: in `setup()` `apply_native_window_mask()` imposta
+  `NSWindow` non opaque, background clear e clipping/corner radius sul `contentView` layer.
+  Serve per eliminare gli spigoli residui su Mac ARM dove il solo CSS/JS non basta.
 
 ### Sessione 2026-07-05 — migrazione a mpv
 - `<audio>` WebKit → **mpv** nel backend Rust (vedi sez. "Motore audio — mpv").
