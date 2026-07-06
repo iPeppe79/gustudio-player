@@ -241,8 +241,9 @@ Allineato a `.NET NowPlayingService.IsNonMusical`:
   visualizer diventa quasi fermo. Audio principale resta 35%, PCM/EQ torna a `--volume=100`
   (non esce sulle casse). ICY delay default ridotto da 18s a 4s e il vecchio valore 18s
   salvato in localStorage viene migrato automaticamente a 4s per velocizzare titolo/cover.
-- Header FunSide aggiornato con PNG trasparente `src/public/funside-logo.png` (180x100)
-  fornito da Desktop/Header.png; CSS header adattato per logo più alto e cover ridotta.
+- Header FunSide aggiornato con PNG trasparente compatto `src/public/funside-logo.png`
+  (180x70, da Desktop/Progetto senza titolo.png); CSS header riportato a 54px con logo
+  centrato realmente sulla finestra e cover di nuovo a 272px.
 
 ### Sessione 2026-07-05 — migrazione a mpv
 - `<audio>` WebKit → **mpv** nel backend Rust (vedi sez. "Motore audio — mpv").

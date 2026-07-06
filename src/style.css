@@ -82,7 +82,7 @@ img {
 
 /* ── Header ──────────────────────────────────────────────────────────────────── */
 .header {
-  height: 88px;
+  height: 54px;
   background: rgba(0,0,0,0.45);
   border-bottom: 1px solid rgba(255,255,255,0.06);
   display: flex;
@@ -90,6 +90,7 @@ img {
   padding: 0 12px;
   flex-shrink: 0;
   gap: 0;
+  position: relative;
 }
 
 .header-left {
@@ -97,6 +98,7 @@ img {
   align-items: center;
   gap: 7px;
   flex-shrink: 0;
+  z-index: 1;
 }
 
 .traffic-btn {
@@ -127,16 +129,23 @@ img {
 .icon-btn:hover { background: rgba(255,255,255,0.14); color: rgba(255,255,255,0.9); }
 
 .header-brand {
-  flex: 1;
+  position: absolute;
+  left: 50%;
+  top: 0;
+  height: 100%;
+  transform: translateX(-50%);
   display: flex;
   align-items: center;
   justify-content: center;   /* logo centrato */
+  pointer-events: none;
 }
 
 .header-right {
   display: flex;
   align-items: center;
   flex-shrink: 0;
+  margin-left: auto;
+  z-index: 1;
 }
 
 .brand-name {
@@ -149,8 +158,8 @@ img {
 }
 
 .brand-logo {
-  max-height: 82px;
-  max-width: 150px;
+  max-height: 42px;
+  max-width: 132px;
   width: auto;
   height: auto;
   object-fit: contain;
@@ -162,8 +171,8 @@ img {
 /* ── Cover ───────────────────────────────────────────────────────────────────── */
 .cover-wrap {
   width: 272px;
-  height: 230px;
-  margin: 6px auto 0;
+  height: 272px;
+  margin: 8px auto 0;
   flex-shrink: 0;
   position: relative;
   background: #111120;
@@ -171,7 +180,7 @@ img {
   border-radius: 12px;
 }
 #coverImg {
-  width: 272px; height: 230px;
+  width: 272px; height: 272px;
   object-fit: cover;
   display: block;
   -webkit-user-drag: none;
