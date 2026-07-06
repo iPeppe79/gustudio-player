@@ -61,6 +61,14 @@ pub fn get_os_string() -> String {
     format!("{} {}", info.os_type(), info.version())
 }
 
+/// Nome utente del sistema operativo (login) — utile per il troubleshooting.
+pub fn get_username() -> String {
+    std::env::var("USER")
+        .or_else(|_| std::env::var("USERNAME"))
+        .or_else(|_| std::env::var("LOGNAME"))
+        .unwrap_or_default()
+}
+
 pub struct TelemetryState {
     pub info:        Arc<Mutex<Option<PlayerInfo>>>,
     pub hb_handle:   Arc<Mutex<Option<JoinHandle<()>>>>,
@@ -87,6 +95,7 @@ struct EventPayload {
     station_id:   String,
     brand_id:     String,
     hostname:     String,
+    username:     String,
     mac:          String,
     platform:     String,
     audio_state:  Option<String>,
@@ -124,6 +133,7 @@ pub async fn post_event(
         station_id,
         brand_id,
         hostname,
+        username:     get_username(),
         mac:          get_mac(),
         platform:     format!("{}/{}", std::env::consts::OS, std::env::consts::ARCH),
         audio_state,
