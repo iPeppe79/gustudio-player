@@ -1,0 +1,59 @@
+# Build dedicato Windows x64 (manuale). Scarica da solo un mpv self-contained
+# (zhongfly/mpv-winbuild), lo mette come sidecar e produce l'installer .msi/.exe.
+name: Build Windows
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    name: Build Windows-x64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Fetch mpv sidecar (Windows, self-contained)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = "src-tauri/bin"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          # Ultima release di zhongfly/mpv-winbuild: asset mpv-x86_64-<data>-git-*.7z
+          # (escludo le varianti -v3, che richiedono CPU recenti, per compatibilità).
+          $rel = Invoke-RestMethod -Uri "https://api.github.com/repos/zhongfly/mpv-winbuild/releases/latest" -Headers @{ "User-Agent" = "gha" }
+          $asset = $rel.assets | Where-Object { $_.name -match '^mpv-x86_64-\d' -and $_.name -notmatch 'v3' -and $_.name -like '*.7z' } | Select-Object -First 1
+          if (-not $asset) { throw "asset mpv x86_64 non trovato nella release" }
+          Write-Host "Scarico:" $asset.name
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "mpv-win.7z"
+          & 7z x "mpv-win.7z" "-ompv-win" -y | Out-Null
+          $exe = Get-ChildItem -Path "mpv-win" -Recurse -Filter "mpv.exe" | Select-Object -First 1
+          if (-not $exe) { throw "mpv.exe non trovato nell'archivio" }
+          Copy-Item $exe.FullName "$dir/mpv-x86_64-pc-windows-msvc.exe" -Force
+          $sz = (Get-Item "$dir/mpv-x86_64-pc-windows-msvc.exe").Length
+          Write-Host "Sidecar mpv pronto: $sz byte"
+
+      - name: Build Tauri app (funside)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          BRAND: funside
+          PLAYER_API_KEY: ${{ secrets.PLAYER_API_KEY }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: player-windows-x64
+          path: |
+            src-tauri/target/release/bundle/**/*.exe
+            src-tauri/target/release/bundle/**/*.msi
+          retention-days: 14
