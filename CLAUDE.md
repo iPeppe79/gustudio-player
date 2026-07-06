@@ -252,6 +252,10 @@ Allineato a `.NET NowPlayingService.IsNonMusical`:
 - Aggiunto fix nativo macOS in Rust: in `setup()` `apply_native_window_mask()` imposta
   `NSWindow` non opaque, background clear e clipping/corner radius sul `contentView` layer.
   Serve per eliminare gli spigoli residui su Mac ARM dove il solo CSS/JS non basta.
+- Nota crash macOS Intel 12.7.6: `SIGABRT` in `_RegisterApplication` con parent `codex`
+  è stato generato lanciando direttamente `FunSide Radio.app/Contents/MacOS/gustudio-player`.
+  Per smoke test GUI usare sempre il bundle `.app` (`open .../FunSide Radio.app` o Finder);
+  il binario interno non è un entrypoint valido per AppKit/LaunchServices.
 
 ### Sessione 2026-07-05 — migrazione a mpv
 - `<audio>` WebKit → **mpv** nel backend Rust (vedi sez. "Motore audio — mpv").
