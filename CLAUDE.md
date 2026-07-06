@@ -239,6 +239,10 @@ rispetto all'audio; il watchdog non interveniva". Diagnosi: **cache mpv grande (
   Mac (header grande). Backup del mio lavoro nel branch `backup-watchdog-telemetria`.
 - **Telemetria**: `telemetry.rs` aggiunge `username` (utente OS, `USER`/`USERNAME`) a ogni
   evento, oltre a `hostname`/`mac`/`platform`. (client commit `9ed6345`, DMG 18:33)
+- **IP diagnostici**: `local_ip` deve arrivare dal client (rilevato via socket UDP locale,
+  perché il server non può vedere l'IP LAN dietro NAT). L'IP pubblico invece va salvato
+  lato server dalla richiesta HTTP (`X-Forwarded-For`/`CF-Connecting-IP`/remote_addr) e
+  mostrato come `public_ip`/`ip` nel PLAYER HEALTH.
 - **BUG lato server importante — `api_player_health` ricostruisce l'entry** con un
   sottoinsieme di campi: **scartava `mac` e `username`** (e non salvava l'IP). Fix: entry
   ora include `username`, `mac`, `ip`. Il `hostname` salvato è quello del client (su questo

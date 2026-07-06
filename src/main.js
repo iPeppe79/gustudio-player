@@ -342,7 +342,7 @@ async function checkFirstRun() {
     const info = await safeInvoke('get_system_info');
     if (info) {
       const el = document.getElementById('setupHostInfo');
-      if (el) el.textContent = (info.hostname||'') + ' · ' + (info.mac||'') + ' · ' + (info.os||'');
+      if (el) el.textContent = (info.hostname||'') + ' · ' + (info.local_ip||'') + ' · ' + (info.mac||'') + ' · ' + (info.os||'');
     }
   } catch(e) {}
   modal.hidden = false;

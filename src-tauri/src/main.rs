@@ -152,6 +152,7 @@ async fn telemetry_init(
         station_id: station_id.clone(),
         name:       name.clone(),
         hostname:   telemetry::get_hostname(),
+        local_ip:   telemetry::get_local_ip(),
         mac:        telemetry::get_mac(),
         insegna:    String::new(),
         via:        String::new(),
@@ -174,6 +175,7 @@ async fn telemetry_init(
 async fn get_system_info() -> serde_json::Value {
     serde_json::json!({
         "hostname": telemetry::get_hostname(),
+        "local_ip": telemetry::get_local_ip(),
         "mac":      telemetry::get_mac(),
         "os":       telemetry::get_os_string(),
     })
@@ -203,6 +205,7 @@ async fn telemetry_register(
         station_id: station_id.clone(),
         name:       name.clone(),
         hostname:   telemetry::get_hostname(),
+        local_ip:   telemetry::get_local_ip(),
         mac:        telemetry::get_mac(),
         insegna:    insegna.clone(),
         via:        via.clone(),
@@ -284,6 +287,14 @@ async fn telemetry_health(
         .json(&serde_json::json!({
             "uuid": uuid, "event": "health_check",
             "station_id": station_id, "version": version,
+            "hostname": telemetry::get_hostname(),
+            "username": telemetry::get_username(),
+            "local_ip": telemetry::get_local_ip(),
+            "mac": telemetry::get_mac(),
+            "platform": format!("{}/{}", std::env::consts::OS, std::env::consts::ARCH),
+            "os": std::env::consts::OS,
+            "architecture": std::env::consts::ARCH,
+            "audio_engine": crate::mpv::AUDIO_ENGINE,
         }))
         .send().await.map_err(|e| e.to_string())?;
     let status = resp.status().as_u16();

@@ -32,6 +32,7 @@ pub struct PlayerInfo {
     pub station_id: String,
     pub name:       String,
     pub hostname:   String,
+    pub local_ip:   String,
     pub mac:        String,
     pub insegna:    String,
     pub via:        String,
@@ -46,6 +47,16 @@ pub fn get_hostname() -> String {
     hostname::get()
         .map(|h| h.to_string_lossy().to_string())
         .unwrap_or_else(|_| "unknown".to_string())
+}
+
+pub fn get_local_ip() -> String {
+    std::net::UdpSocket::bind("0.0.0.0:0")
+        .and_then(|sock| {
+            let _ = sock.connect("8.8.8.8:80");
+            sock.local_addr()
+        })
+        .map(|addr| addr.ip().to_string())
+        .unwrap_or_default()
 }
 
 pub fn get_mac() -> String {
@@ -95,6 +106,7 @@ struct EventPayload {
     station_id:   String,
     brand_id:     String,
     hostname:     String,
+    local_ip:     String,
     username:     String,
     mac:          String,
     platform:     String,
@@ -133,6 +145,7 @@ pub async fn post_event(
         station_id,
         brand_id,
         hostname,
+        local_ip:     get_local_ip(),
         username:     get_username(),
         mac:          get_mac(),
         platform:     format!("{}/{}", std::env::consts::OS, std::env::consts::ARCH),
