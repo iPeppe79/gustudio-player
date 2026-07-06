@@ -7,7 +7,12 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 const COMPILED_BRAND = __BRAND__;
 const IS_DEV_BUILD   = __BUILD_MODE__ === 'dev';
 const VERSION      = '0.1.0';
-let   ICY_DELAY_MS = parseInt(localStorage.getItem('icy_delay_ms') || '18000', 10);
+const DEFAULT_ICY_DELAY_MS = 4000;
+let   ICY_DELAY_MS = parseInt(localStorage.getItem('icy_delay_ms') || String(DEFAULT_ICY_DELAY_MS), 10);
+if (ICY_DELAY_MS === 18000) {
+  ICY_DELAY_MS = DEFAULT_ICY_DELAY_MS;
+  localStorage.setItem('icy_delay_ms', String(ICY_DELAY_MS));
+}
 
 // Sono dentro la webview Tauri solo se __TAURI_INTERNALS__ esiste
 const IS_TAURI = typeof window.__TAURI_INTERNALS__ !== 'undefined';

@@ -237,6 +237,10 @@ Allineato a `.NET NowPlayingService.IsNonMusical`:
 - Rebuild finale ripetuto su richiesta: rigenerati x64 e arm64, entrambi con layout DMG
   `FunSide Radio.app` + `Applications -> /Applications`, e ricopiati nella cartella
   Google Drive `GUSTUDIO79/PLAYER/FUNSIDE`.
+- Fix successivo: il volume basso NON va applicato al processo PCM/EQ, altrimenti il
+  visualizer diventa quasi fermo. Audio principale resta 35%, PCM/EQ torna a `--volume=100`
+  (non esce sulle casse). ICY delay default ridotto da 18s a 4s e il vecchio valore 18s
+  salvato in localStorage viene migrato automaticamente a 4s per velocizzare titolo/cover.
 
 ### Sessione 2026-07-05 — migrazione a mpv
 - `<audio>` WebKit → **mpv** nel backend Rust (vedi sez. "Motore audio — mpv").

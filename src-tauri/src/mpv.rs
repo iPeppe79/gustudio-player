@@ -536,7 +536,8 @@ fn start_pcm(inner: Arc<Inner>, url: String) {
         "--ao-pcm-file=/dev/stdout",
         "--ao-pcm-waveheader=no",   // niente header WAV → solo campioni
         "--af=aformat=sample_fmts=flt:channel_layouts=mono:sample_rates=44100",
-        &format!("--volume={}", inner.volume.load(Ordering::Relaxed)),
+        // Solo analisi FFT: non esce sulle casse, deve restare alto per non ammazzare l'EQ.
+        "--volume=100",
         &url,
     ]);
     cmd.stdin(std::process::Stdio::null());
