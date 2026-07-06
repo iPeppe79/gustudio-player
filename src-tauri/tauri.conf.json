@@ -14,8 +14,8 @@
     "windows": [
       {
         "title": "FunSide Radio",
-        "width": 300,
-        "height": 502,
+        "width": 320,
+        "height": 524,
         "resizable": false,
         "decorations": false,
         "transparent": true,
