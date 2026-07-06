@@ -256,6 +256,18 @@ rispetto all'audio; il watchdog non interveniva". Diagnosi: **cache mpv grande (
   `api_player_health` (riga ~75476). Aggiungere un campo lato client richiede aggiungerlo
   ANCHE lì, altrimenti viene scartato.
 
+### Sessione 2026-07-06 (sera) — rebuild FunSide Intel con ultime fix
+- Mac Intel allineato a `origin/main` fino a commit `0220ed2` (watchdog anti-muto v2,
+  cache mpv 10s, ICY delay dinamico, telemetria ricca username/mac/platform).
+- Build eseguita: `BRAND=funside npm run tauri build`.
+- Ricopiata cartella lib di mpv Homebrew nel bundle x64 e rigenerato DMG manuale con
+  `FunSide Radio.app` + symlink `Applications -> /Applications`.
+- Verifica architettura: app e `Contents/MacOS/mpv` sono `x86_64`.
+- Smoke test bundle: `open .../FunSide Radio.app` OK; verificati 2 processi mpv:
+  audio principale con `--cache-secs=10 --volume=35` e PCM/EQ con `--volume=100`.
+- DMG copiato su Google Drive:
+  `/Volumes/5TBUSB3/CLOUDING/GDRIVE PEPPE/GUSTUDIO79/PLAYER/FUNSIDE/FunSide Radio_0.1.0_x64_mpv.dmg`.
+
 ---
 
 ## STATO DEBUG — 2026-07-05
