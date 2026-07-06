@@ -244,6 +244,8 @@ Allineato a `.NET NowPlayingService.IsNonMusical`:
 - Header FunSide aggiornato con PNG trasparente compatto `src/public/funside-logo.png`
   (180x70, da Desktop/Progetto senza titolo.png); CSS header riportato a 54px con logo
   centrato realmente sulla finestra e cover di nuovo a 272px.
+- Eliminato doppio layer visibile su sfondi chiari: finestra Tauri portata a 300x502,
+  `html/body` allineati alla stessa misura e rimossa ombra esterna CSS da `#app`.
 
 ### Sessione 2026-07-05 — migrazione a mpv
 - `<audio>` WebKit → **mpv** nel backend Rust (vedi sez. "Motore audio — mpv").

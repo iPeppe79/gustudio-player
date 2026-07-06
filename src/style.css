@@ -10,8 +10,8 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 [hidden] { display: none !important; }
 
-/* Finestra trasparente (320x512): il player fluttua centrato con angoli tondi.
-   Il margine attorno lascia spazio all'ombra → look premium. */
+/* Finestra trasparente: il player riempie la webview per evitare layer chiari
+   attorno al bordo quando macOS cattura la finestra su sfondi chiari. */
 html, body {
   margin: 0; padding: 0;
   background: transparent !important;
@@ -21,8 +21,8 @@ html, body {
   color: var(--text);
   -webkit-user-select: none;
   user-select: none;
-  width: 320px;
-  height: 524px;
+  width: 300px;
+  height: 502px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -37,9 +37,7 @@ html, body {
   display: flex;
   flex-direction: column;
   position: relative;
-  box-shadow:
-    0 20px 50px rgba(0,0,0,0.55),
-    0 2px 8px rgba(0,0,0,0.4);
+  box-shadow: none;
   border: 1px solid rgba(255,255,255,0.06);
 }
 
