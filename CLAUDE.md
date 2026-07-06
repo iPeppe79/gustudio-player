@@ -221,6 +221,20 @@ Allineato a `.NET NowPlayingService.IsNonMusical`:
   Per sbloccare la build locale è stato usato un mpv prebuilt x86_64 con cartella `lib/`
   inclusa dentro `Contents/MacOS`. App/DMG restano non firmati.
 
+### Sessione 2026-07-06 — fix volume iniziale + rebuild macOS
+- Problema: app FunSide macOS partiva con volume troppo alto. Causa: default Rust mpv `80`
+  e default JS `_mpvVolume = 0.8`; il ramo PCM/EQ partiva con `--volume=100`.
+- Fix: default volume portato a 35% in `src/main.js` e `src-tauri/src/mpv.rs`; ramo
+  PCM/EQ allineato al volume corrente invece di forzare 100.
+- Rebuild creati e copiati in Google Drive:
+  - `.../PLAYER/FUNSIDE/FunSide Radio_0.1.0_x64_mpv.dmg`
+  - `.../PLAYER/FUNSIDE/FunSide Radio_0.1.0_arm64_mpv.dmg`
+- Entrambi i DMG contengono `FunSide Radio.app` + symlink `Applications -> /Applications`.
+- Smoke test x64: OK, verificati 2 processi mpv con `--volume=35` (audio + PCM/EQ).
+- ARM64 rebuild eseguito da Mac Intel con toolchain rustup e target `aarch64-apple-darwin`;
+  sidecar `mpv-aarch64-apple-darwin` estratto dal DMG ARM precedente. DMG ARM resta circa
+  6 MB perché contiene un mpv arm64 singolo/self-contained, senza cartella `lib/`.
+
 ### Sessione 2026-07-05 — migrazione a mpv
 - `<audio>` WebKit → **mpv** nel backend Rust (vedi sez. "Motore audio — mpv").
 - Watchdog anti-silenzio + `--network-timeout=10` + reconnect ffmpeg.

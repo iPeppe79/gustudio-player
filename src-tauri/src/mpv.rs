@@ -25,6 +25,8 @@ use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 /// Etichetta motore audio — usata dalla telemetria. Ora è VERO: mpv.
 pub const AUDIO_ENGINE: &str = "mpv";
 
+const DEFAULT_VOLUME: u64 = 35;
+
 // Se core-idle resta true (nessun output audio) per più di questo mentre vogliamo
 // suonare, il watchdog considera lo stream morto e riavvia mpv.
 const STALL_RESTART_SECS: u64 = 8;
@@ -64,7 +66,7 @@ impl MpvState {
                 cmd_tx: Mutex::new(None),
                 current_url: Mutex::new(None),
                 want_play: AtomicBool::new(false),
-                volume: AtomicU64::new(80),
+                volume: AtomicU64::new(DEFAULT_VOLUME),
                 shutdown: AtomicBool::new(false),
                 started: AtomicBool::new(false),
                 alive: AtomicBool::new(false),
@@ -534,7 +536,7 @@ fn start_pcm(inner: Arc<Inner>, url: String) {
         "--ao-pcm-file=/dev/stdout",
         "--ao-pcm-waveheader=no",   // niente header WAV → solo campioni
         "--af=aformat=sample_fmts=flt:channel_layouts=mono:sample_rates=44100",
-        "--volume=100",
+        &format!("--volume={}", inner.volume.load(Ordering::Relaxed)),
         &url,
     ]);
     cmd.stdin(std::process::Stdio::null());

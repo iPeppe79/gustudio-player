@@ -74,7 +74,8 @@ function setStatus(cls, label) {
 
 // ── Audio (motore mpv nel backend Rust) ───────────────────────────────────────
 // Nessun tag <audio>: play/stop/volume passano da invoke() → mpv.rs.
-let _mpvVolume = 0.8;         // 0..1 in UI, convertito a 0..100 per mpv
+const DEFAULT_MPV_VOLUME = 0.35;
+let _mpvVolume = DEFAULT_MPV_VOLUME; // 0..1 in UI, convertito a 0..100 per mpv
 let _mpvWasPlaying = false;   // primo 'playing' = PLAY_START_OK, successivi = AUDIO_RECOVERED
 
 function getAudioState() {
@@ -766,7 +767,10 @@ async function init() {
     if (state.playing) stop(); else play();
   });
   document.getElementById('btnStop').addEventListener('click', stop);
-  document.getElementById('volSlider').addEventListener('input', e => {
+  const volSlider = document.getElementById('volSlider');
+  volSlider.value = String(DEFAULT_MPV_VOLUME);
+  safeInvoke('mpv_set_volume', { volume: Math.round(_mpvVolume * 100) }).catch(()=>{});
+  volSlider.addEventListener('input', e => {
     _mpvVolume = parseFloat(e.target.value);
     safeInvoke('mpv_set_volume', { volume: Math.round(_mpvVolume * 100) }).catch(()=>{});
   });
