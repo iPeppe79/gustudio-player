@@ -30,6 +30,12 @@ const DEFAULT_VOLUME: u64 = 35;
 // Se core-idle resta true (nessun output audio) per più di questo mentre vogliamo
 // suonare, il watchdog considera lo stream morto e riavvia mpv.
 const STALL_RESTART_SECS: u64 = 8;
+// audio-pts fermo (mpv "suona" ma la posizione non avanza) → muto silenzioso
+const PTS_STALL_SECS: u64 = 5;
+// cache prosciugata e ferma → underrun
+const CACHE_STALL_SECS: u64 = 6;
+// flusso PCM fermo (EQ frizzato) → riavvia solo il ramo EQ
+const PCM_STALL_SECS: u64 = 6;
 
 // Parametri FFT del visualizer.
 const FFT_SIZE: usize = 1024;
@@ -51,6 +57,18 @@ struct Inner {
     // PCM / FFT
     pcm_child: Mutex<Option<Child>>,
     pcm_gen: AtomicU64, // generazione: invalida i task PCM vecchi al restart
+    // ── Troubleshooting / watchdog ──
+    pcm_last_data: AtomicU64, // epoch-ms dell'ultimo blocco PCM (0 = mai). EQ frizzato = flusso fermo
+    cache_ms: AtomicU64,      // demuxer-cache-duration corrente (ms) — profondità buffer
+    reconnects: AtomicU64,    // quante volte il watchdog ha riavviato mpv in questa sessione
+    last_warn: Mutex<String>, // ultima riga di warning/errore da stderr mpv
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 #[derive(Clone)]
@@ -72,8 +90,25 @@ impl MpvState {
                 alive: AtomicBool::new(false),
                 pcm_child: Mutex::new(None),
                 pcm_gen: AtomicU64::new(0),
+                pcm_last_data: AtomicU64::new(0),
+                cache_ms: AtomicU64::new(0),
+                reconnects: AtomicU64::new(0),
+                last_warn: Mutex::new(String::new()),
             }),
         }
+    }
+
+    /// Snapshot per telemetria/troubleshooting.
+    pub fn stats(&self) -> serde_json::Value {
+        let last_warn = self.inner.last_warn.lock().ok().map(|g| g.clone()).unwrap_or_default();
+        json!({
+            "engine": AUDIO_ENGINE,
+            "alive": self.inner.alive.load(Ordering::Relaxed),
+            "cache_secs": self.inner.cache_ms.load(Ordering::Relaxed) as f64 / 1000.0,
+            "reconnects": self.inner.reconnects.load(Ordering::Relaxed),
+            "pcm_active": self.inner.pcm_last_data.load(Ordering::Relaxed) > 0,
+            "last_warn": last_warn,
+        })
     }
 
     /// True se il processo mpv principale è vivo e connesso.
@@ -109,6 +144,8 @@ impl MpvState {
             *g = Some(url.clone());
         }
         self.inner.want_play.store(true, Ordering::Relaxed);
+        // finestra di grazia: non far scattare i watchdog PCM/pts prima del primo dato
+        self.inner.pcm_last_data.store(now_ms(), Ordering::Relaxed);
         // loadfile immediato se già connessi; altrimenti il supervisore lo farà al connect.
         self.send_cmd(json!({ "command": ["loadfile", url.clone(), "replace"] }));
         self.send_cmd(json!({ "command": ["set_property", "pause", false] }));
@@ -230,10 +267,13 @@ async fn supervisor(inner: Arc<Inner>) {
             "--idle=yes",
             "--no-terminal",
             "--no-config",
-            "--quiet",
+            // niente --quiet: vogliamo i warning su stderr (underrun/reconnect/timeout)
+            "--msg-level=all=warn",
             &format!("--input-ipc-server={sock_path}"),
             "--cache=yes",
-            "--cache-secs=30",
+            // Cache ridotta 30→10s: audio più vicino al live (meno desync col titolo ICY);
+            // il watchdog cache/PCM compensa gli underrun.
+            "--cache-secs=10",
             "--demuxer-max-bytes=50M",
             "--stream-buffer-size=512k",
             "--no-cache-pause",
@@ -244,7 +284,7 @@ async fn supervisor(inner: Arc<Inner>) {
         ]);
         cmd.stdin(std::process::Stdio::null());
         cmd.stdout(std::process::Stdio::null());
-        cmd.stderr(std::process::Stdio::null());
+        cmd.stderr(std::process::Stdio::piped()); // catturiamo i warning mpv per il troubleshooting
         cmd.kill_on_drop(true);
         #[cfg(windows)]
         {
@@ -253,7 +293,7 @@ async fn supervisor(inner: Arc<Inner>) {
             cmd.creation_flags(CREATE_NO_WINDOW);
         }
 
-        let child = match cmd.spawn() {
+        let mut child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
                 emit(
@@ -300,6 +340,21 @@ async fn supervisor(inner: Arc<Inner>) {
         inner.alive.store(true, Ordering::Relaxed);
         attempt = 0;
         emit(&inner, "mpv-ready", json!({}));
+
+        // ── stderr mpv → warning per il troubleshooting ──
+        if let Some(stderr) = child.stderr.take() {
+            let inner_err = inner.clone();
+            tokio::spawn(async move {
+                let mut lines = BufReader::new(stderr).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    let l = line.trim().to_string();
+                    if l.is_empty() { continue; }
+                    eprintln!("[mpv stderr] {l}");
+                    if let Ok(mut g) = inner_err.last_warn.lock() { *g = l.clone(); }
+                    emit(&inner_err, "mpv-warn", json!({ "line": l }));
+                }
+            });
+        }
 
         // observe_property (stessi id del vecchio player)
         let _ = tx.send(json!({"command":["observe_property",1,"playback-time"]}).to_string() + "\n");
@@ -369,6 +424,9 @@ async fn reader_loop(
     let mut eof_reason: Option<String> = None;
     let mut cache_dur: f64 = 0.0;
     let mut last_cache_adv = Instant::now();
+    let mut last_pts: f64 = -1.0;              // playback-time: se non avanza → audio fermo
+    let mut last_pts_change = Instant::now();
+    let mut tick_count: u64 = 0;
 
     loop {
         tokio::select! {
@@ -401,6 +459,15 @@ async fn reader_loop(
                                             if let Some(d) = msg.get("data").and_then(|v| v.as_f64()) {
                                                 if d > cache_dur + 0.01 { last_cache_adv = Instant::now(); }
                                                 cache_dur = d;
+                                                inner.cache_ms.store((d * 1000.0) as u64, Ordering::Relaxed);
+                                            }
+                                        }
+                                        "playback-time" => {
+                                            if let Some(p) = msg.get("data").and_then(|v| v.as_f64()) {
+                                                if (p - last_pts).abs() > 0.05 {
+                                                    last_pts_change = Instant::now();
+                                                    last_pts = p;
+                                                }
                                             }
                                         }
                                         _ => {}
@@ -445,22 +512,53 @@ async fn reader_loop(
             }
             _ = interval.tick() => {
                 if inner.shutdown.load(Ordering::Relaxed) { return None; }
+                tick_count += 1;
+
+                // stats periodiche (~2s) per frontend (ICY delay dinamico) e telemetria
+                if tick_count % 4 == 0 {
+                    emit(&inner, "mpv-stats", json!({
+                        "cache_secs": cache_dur,
+                        "reconnects": inner.reconnects.load(Ordering::Relaxed),
+                    }));
+                }
+
                 let want = inner.want_play.load(Ordering::Relaxed);
                 if want {
-                    // watchdog: core-idle bloccato troppo a lungo → stream morto
+                    // (a) core-idle bloccato troppo a lungo → stream morto (classico)
                     let stalled_idle = idle_since
                         .map(|t| t.elapsed().as_secs() >= STALL_RESTART_SECS)
                         .unwrap_or(false);
-                    // oppure cache ferma da troppo tempo mentre non stiamo suonando
-                    let stalled_cache = core_idle && last_cache_adv.elapsed().as_secs() >= STALL_RESTART_SECS;
-                    if stalled_idle || stalled_cache {
-                        let stall_ms = idle_since.map(|t| t.elapsed().as_millis()).unwrap_or(0);
+                    // (b) audio-pts NON avanza pur non essendo idle → muto "silenzioso"
+                    let stalled_pts = !core_idle && last_pts >= 0.0
+                        && last_pts_change.elapsed().as_secs() >= PTS_STALL_SECS;
+                    // (c) cache prosciugata e ferma → underrun imminente/in corso
+                    let stalled_cache = cache_dur < 0.3
+                        && last_cache_adv.elapsed().as_secs() >= CACHE_STALL_SECS;
+                    // (d) flusso PCM fermo (EQ frizzato) → lo stream non produce campioni
+                    let pcm_last = inner.pcm_last_data.load(Ordering::Relaxed);
+                    let stalled_pcm = pcm_last > 0
+                        && now_ms().saturating_sub(pcm_last) >= PCM_STALL_SECS * 1000;
+
+                    if stalled_idle || stalled_pts || stalled_cache {
+                        // stallo audio reale → kill+restart mpv (ricarica anche il PCM)
+                        let reason = if stalled_pts { "audio_pts_frozen" }
+                            else if stalled_idle { "core_idle_stuck" }
+                            else { "cache_drained" };
+                        let stall_ms = idle_since.map(|t| t.elapsed().as_millis() as u64)
+                            .unwrap_or_else(|| last_pts_change.elapsed().as_millis() as u64);
+                        inner.reconnects.fetch_add(1, Ordering::Relaxed);
                         emit(&inner, "mpv-state", json!({
-                            "phase": "silent",
-                            "reason": "watchdog_stall",
-                            "stall_ms": stall_ms,
+                            "phase": "silent", "reason": reason,
+                            "stall_ms": stall_ms, "cache_secs": cache_dur,
                         }));
-                        return Some(format!("watchdog_stall_{stall_ms}ms"));
+                        return Some(format!("watchdog_{reason}_{stall_ms}ms"));
+                    } else if stalled_pcm {
+                        // solo il PCM è fermo (EQ frizzato) ma l'audio va: riavvia SOLO il PCM,
+                        // niente glitch sull'audio principale.
+                        if let Some(url) = inner.current_url.lock().ok().and_then(|g| g.clone()) {
+                            emit(&inner, "mpv-warn", json!({ "line": "pcm_flow_stalled: restart PCM/EQ" }));
+                            start_pcm(inner.clone(), url);
+                        }
                     }
                 }
             }
@@ -523,6 +621,8 @@ fn start_pcm(inner: Arc<Inner>, url: String) {
     #[cfg(unix)]
     {
     let my_gen = inner.pcm_gen.load(Ordering::SeqCst);
+    // finestra di grazia: evita che il watchdog PCM ri-scatti col timestamp vecchio
+    inner.pcm_last_data.store(now_ms(), Ordering::Relaxed);
 
     let binary = mpv_binary();
     let mut cmd = Command::new(&binary);
@@ -603,6 +703,8 @@ fn start_pcm(inner: Arc<Inner>, url: String) {
                 Ok(n) => n,
                 Err(_) => break,
             };
+            // timestamp ultimo dato PCM → il watchdog rileva "EQ frizzato"/flusso fermo
+            inner.pcm_last_data.store(now_ms(), Ordering::Relaxed);
             byte_buf.extend_from_slice(&read_buf[..n]);
 
             // bytes → f32 LE

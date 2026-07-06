@@ -14,6 +14,19 @@ if (ICY_DELAY_MS === 18000) {
   ICY_DELAY_MS = DEFAULT_ICY_DELAY_MS;
   localStorage.setItem('icy_delay_ms', String(ICY_DELAY_MS));
 }
+// ICY delay dinamico: si allinea alla profondità reale di cache mpv (demuxer-cache-duration).
+// Il titolo ICY è quasi-live, l'audio è indietro ≈ cache → ritardo il titolo di quel tanto.
+// Se in auto usa la cache; altrimenti il valore manuale (default DEFAULT_ICY_DELAY_MS).
+let   _icyAutoDelay = localStorage.getItem('icy_manual') !== '1';
+let   _mpvCacheMs   = 0;   // ultima profondità cache (ms) da mpv-stats
+let   _mpvStats     = {};  // ultimo snapshot mpv (cache_secs, reconnects, last_warn, ...)
+
+function effectiveIcyDelay() {
+  if (_icyAutoDelay && _mpvCacheMs > 0) {
+    return Math.min(15000, Math.max(2000, Math.round(_mpvCacheMs)));
+  }
+  return ICY_DELAY_MS;
+}
 
 // Sono dentro la webview Tauri solo se __TAURI_INTERNALS__ esiste
 const IS_TAURI = typeof window.__TAURI_INTERNALS__ !== 'undefined';
@@ -109,6 +122,7 @@ const _DIAG_THROTTLE = {
   AUDIO_RECOVERED: 5000,
   HEARTBEAT:      60000,
   RECONNECT:       5000,
+  MPV_WARN:       30000,
   LONG_SILENCE: 20*60*1000,
   default:         2000,
 };
@@ -742,14 +756,45 @@ function setBrandSelect(brandId) {
     list.querySelectorAll('.cselect-opt').forEach(o => o.classList.toggle('selected', o.dataset.value===brandId)); }
 }
 
+// Dati device + motore per il troubleshooting (allegati a HEARTBEAT/APP_START)
+async function troubleshootExtra() {
+  const nav = navigator || {};
+  const conn = nav.connection || {};
+  let mpv = {};
+  try { mpv = await safeInvoke('mpv_stats') || {}; } catch(e) {}
+  const scr = window.screen || {};
+  return {
+    app_version: VERSION,
+    audio_engine: mpv.engine || 'mpv',
+    mpv_alive:  mpv.alive,
+    cache_secs: mpv.cache_secs,
+    reconnects: mpv.reconnects,
+    last_warn:  mpv.last_warn || undefined,
+    icy_delay_ms: effectiveIcyDelay(),
+    icy_auto:   _icyAutoDelay,
+    audio_phase: state.audioPhase,
+    volume:     Math.round(_mpvVolume*100),
+    net_online: navigator.onLine,
+    net_type:   conn.effectiveType,
+    net_downlink: conn.downlink,
+    cores:      nav.hardwareConcurrency,
+    device_mem: nav.deviceMemory,
+    screen:     scr.width ? (scr.width+'x'+scr.height) : undefined,
+    dpr:        window.devicePixelRatio,
+    lang:       nav.language,
+    ua:         (nav.userAgent||'').slice(0,120),
+  };
+}
+
 // ── Heartbeat ─────────────────────────────────────────────────────────────────
 function startHeartbeat() {
-  setInterval(() => {
+  setInterval(async () => {
     if (!state.brand) return;
     const uptime = _playStartedAt > 0 ? Math.round((Date.now()-_playStartedAt)/60000) : 0;
+    const extra = await troubleshootExtra();
+    extra.uptime_min = uptime;
     safeInvoke('send_event', { event:'HEARTBEAT', audioState:getAudioState(),
-      issueType:null, issueNote:null,
-      extra: uptime > 0 ? { uptime_min: uptime } : null }).catch(()=>{});
+      issueType:null, issueNote:null, extra }).catch(()=>{});
     // Silenzio prolungato: playing ma nessun cambio brano da >20min
     if (state.playing && state.audioPhase==='playing' && _lastTrackAt > 0 &&
         (Date.now()-_lastTrackAt) > 20*60*1000) {
@@ -846,14 +891,16 @@ async function init() {
   document.getElementById('installedVersion').textContent = VERSION;
   document.getElementById('playerUuid').textContent       = uuid;
 
-  // ICY delay slider
+  // ICY delay slider — di default AUTO (segue la cache mpv). Toccarlo passa a manuale.
   const icySlider = document.getElementById('icyDelaySlider');
   const icyLabel  = document.getElementById('icyDelayLabel');
   if (icySlider) {
     icySlider.value = ICY_DELAY_MS / 1000;
-    icyLabel.textContent = (ICY_DELAY_MS/1000)+'s';
+    icyLabel.textContent = _icyAutoDelay ? 'auto' : (ICY_DELAY_MS/1000)+'s';
     icySlider.addEventListener('input', e => {
       ICY_DELAY_MS = parseInt(e.target.value) * 1000;
+      _icyAutoDelay = false;
+      localStorage.setItem('icy_manual', '1');
       icyLabel.textContent = e.target.value+'s';
       localStorage.setItem('icy_delay_ms', String(ICY_DELAY_MS));
     });
@@ -897,6 +944,27 @@ async function init() {
       await listen('mpv-restart', ev => handleMpvRestart(ev.payload || {}));
       await listen('mpv-ready',   () => log('[MPV_READY] motore audio connesso'));
       await listen('eq-bands',    ev => onEqBands((ev.payload && ev.payload.bands) || []));
+      await listen('mpv-stats',   ev => {
+        const s = ev.payload || {};
+        if (typeof s.cache_secs === 'number') _mpvCacheMs = s.cache_secs * 1000;
+        _mpvStats.cache_secs = s.cache_secs;
+        _mpvStats.reconnects = s.reconnects;
+        // aggiorna label slider ICY se in auto
+        if (_icyAutoDelay) {
+          const lbl = document.getElementById('icyDelayLabel');
+          if (lbl) lbl.textContent = 'auto ' + (effectiveIcyDelay()/1000).toFixed(0) + 's';
+        }
+      });
+      await listen('mpv-warn',    ev => {
+        const line = (ev.payload && ev.payload.line) || '';
+        if (!line) return;
+        log('[MPV_WARN] '+line);
+        _mpvStats.last_warn = line;
+        // inoltra a telemetria solo i warning che contano (throttle in diag)
+        if (/error|fail|timeout|reconnect|underrun|refused|unavailable|cannot/i.test(line)) {
+          diag('MPV_WARN', { audioState:getAudioState(), issueType:'mpv_stderr', issueNote: line.slice(0,180) });
+        }
+      });
       log('[INIT] mpv listeners ok');
     } catch (e) { log('[INIT] mpv listen fallito: '+e); }
 
@@ -924,7 +992,7 @@ async function init() {
           const trackLabel = artist ? artist+' — '+title : title;
           diag('TRACK_CHANGE', { audioState:'playing', issueNote: trackLabel, extra:{title,artist,raw,is_spot:spot} });
           fetchCover(title, artist);
-        }, ICY_DELAY_MS);
+        }, effectiveIcyDelay());
       });
       log('[INIT] ICY listeners ok');
     } catch (e) { log('[INIT] listen fallito: '+e); }
@@ -954,7 +1022,7 @@ async function init() {
     name:      _sd.insegna || '',
   }).catch(e => log('[TELE_INIT_ERR] '+e));
   await safeInvoke('set_session_id', { sessionId }).catch(()=>{});
-  diag('APP_START', { audioState: 'stopped' });
+  diag('APP_START', { audioState: 'stopped', extra: await troubleshootExtra() });
 
   // 7. Setup primo avvio (se non configurato) poi registrazione completa
   await checkFirstRun();

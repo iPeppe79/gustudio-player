@@ -87,6 +87,8 @@ struct EventPayload {
     station_id:   String,
     brand_id:     String,
     hostname:     String,
+    mac:          String,
+    platform:     String,
     audio_state:  Option<String>,
     audio_engine: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -122,6 +124,8 @@ pub async fn post_event(
         station_id,
         brand_id,
         hostname,
+        mac:          get_mac(),
+        platform:     format!("{}/{}", std::env::consts::OS, std::env::consts::ARCH),
         audio_state,
         // Motore audio reale: mpv (vedi mpv.rs). Non più hardcoded fasullo.
         audio_engine: crate::mpv::AUDIO_ENGINE.to_string(),

@@ -204,6 +204,35 @@ Allineato a `.NET NowPlayingService.IsNonMusical`:
 
 ---
 
+## STATO DEBUG — 2026-07-06
+
+### Sessione 2026-07-06 — anti-muto, sync ICY, telemetria ricca
+Sintomo utente: "ogni tanto ammutolisce, l'EQ si frizza, il titolo ICY è molto avanti
+rispetto all'audio; il watchdog non interveniva". Diagnosi: **cache mpv grande (30s)**.
+- Il titolo ICY (letto quasi-live da `icy.rs`) correva avanti rispetto all'audio, che è
+  indietro ≈ profondità cache. Durante un buco di rete mpv suonava dalla cache
+  (`core-idle` restava false → watchdog cieco) e ammutoliva solo a cache svuotata.
+- **`mpv.rs` — cache 30s→10s** (`--cache-secs=10`): audio più vicino al live, meno desync.
+- **Watchdog v2** (oltre a core-idle): (b) `playback-time` che non avanza mentre non-idle
+  → muto silenzioso; (c) `demuxer-cache-duration` prosciugata e ferma → underrun;
+  (d) flusso **PCM fermo** (EQ frizzato) → riavvia SOLO il ramo EQ (niente glitch audio).
+  Costanti: PTS_STALL 5s, CACHE_STALL 6s, PCM_STALL 6s, idle 8s.
+- **stderr mpv catturato** (era `null`) → `--msg-level=all=warn`, task che salva `last_warn`
+  ed emette evento `mpv-warn`. Il frontend logga e inoltra a telemetria (`MPV_WARN`,
+  throttle 30s) solo i warning importanti (error/timeout/reconnect/underrun/…).
+- **ICY delay dinamico**: evento `mpv-stats` (~2s) porta `cache_secs` al frontend →
+  `effectiveIcyDelay()` allinea il titolo alla cache reale (auto, clamp 2–15s). Lo slider
+  passa a manuale se toccato (`icy_manual`).
+- **Telemetria arricchita**: `telemetry.rs` aggiunge `mac` + `platform` (os/arch) a OGNI
+  evento. HEARTBEAT e APP_START portano `troubleshootExtra()`: app_version, audio_engine,
+  mpv_alive, cache_secs, reconnects, last_warn, icy_delay, audio_phase, volume, rete
+  (online/type/downlink), cores, device_mem, screen, dpr, lang, ua. Comando `mpv_stats`.
+- **Server** (VPS commit): report health mostra ora **MAC + Piattaforma + Rete/CPU/RAM/
+  Cache/Reconnect + ultimo warning** (sysBox in `_healthDownloadJson`).
+- Verificato: `cargo check` pulito, `npm run build` ok. Da provare dal vivo il muto/recupero.
+
+---
+
 ## STATO DEBUG — 2026-07-05
 
 ### Sessione 2026-07-06 — build FunSide Intel x64 con mpv

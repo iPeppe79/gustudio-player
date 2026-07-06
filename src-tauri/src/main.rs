@@ -99,6 +99,11 @@ async fn mpv_is_alive(state: tauri::State<'_, MpvState>) -> Result<bool, ()> {
     Ok(state.is_alive())
 }
 
+#[tauri::command]
+async fn mpv_stats(state: tauri::State<'_, MpvState>) -> Result<serde_json::Value, ()> {
+    Ok(state.stats())
+}
+
 // ── ICY ───────────────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -313,6 +318,7 @@ fn main() {
             mpv_stop,
             mpv_set_volume,
             mpv_is_alive,
+            mpv_stats,
             // ICY metadata
             start_icy,
             stop_icy,
