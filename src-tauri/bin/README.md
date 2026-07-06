@@ -14,13 +14,14 @@ Ogni piattaforma deve avere il suo binario, con il triple nel nome:
 | macOS Apple Sil. | `aarch64-apple-darwin`     | `mpv-aarch64-apple-darwin`           |
 | macOS Intel      | `x86_64-apple-darwin`      | `mpv-x86_64-apple-darwin`            |
 | Windows x64      | `x86_64-pc-windows-msvc`   | `mpv-x86_64-pc-windows-msvc.exe`     |
+| Windows ARM64    | `aarch64-pc-windows-msvc`  | `mpv-aarch64-pc-windows-msvc.exe`    |
 
 > IMPORTANTE: devono essere **binari self-contained** (statici o con le loro
 > dipendenze accanto), NON il wrapper di Homebrew che dipende da dylib esterne:
 > altrimenti sul PC dell'utente mpv non parte. Verifica con `otool -L` (mac) /
 > `dumpbin /dependents` (win) che non puntino a percorsi della build machine.
 >
-> I 3 binari devono essere della **stessa versione mpv recente** (>= 0.38).
+> I binari devono essere della **stessa versione mpv recente** (>= 0.38).
 > Build disallineate erano il sospetto per cui si stoppava solo Windows.
 
 ## Come procurarli

@@ -303,13 +303,14 @@ Il tag `<audio>` è stato RIMOSSO. Play/stop/volume → `invoke()` → mpv via s
   è stato tolto: la resilienza è ora tutta lato Rust/mpv.
 
 ### Binario mpv (sidecar) — PUNTO APERTO PACKAGING
-`tauri.conf.json` → `externalBin: ["bin/mpv"]`. Servono 3 binari **self-contained**
+`tauri.conf.json` → `externalBin: ["bin/mpv"]`. Servono binari **self-contained**
 in `src-tauri/bin/` col nome-triple (`mpv-aarch64-apple-darwin`, `mpv-x86_64-apple-darwin`,
-`mpv-x86_64-pc-windows-msvc.exe`). NON committati (`.gitignore`). Vedi `bin/README.md`.
+`mpv-x86_64-pc-windows-msvc.exe`; per Windows ARM64 anche
+`mpv-aarch64-pc-windows-msvc.exe`). NON committati (`.gitignore`). Vedi `bin/README.md`.
 - Dev/locale: `bin/fetch-mpv.sh` copia il mpv di Homebrew (⚠ NON portabile — dipende da
   dylib Homebrew, solo per test su questa macchina). Fallback runtime: `mpv` nel PATH.
 - CI: step "Fetch mpv sidecar" in build-players.yml (URL da fissare: secrets MPV_WIN_URL/
-  MPV_MAC_URL). I 3 binari devono essere STESSA versione mpv >=0.38.
+  MPV_MAC_URL). I binari devono essere STESSA versione mpv >=0.38.
 - Firma macOS: predisposta in CI (secrets APPLE_*), non ancora testata.
 
 ### Verificato dal vivo (DMG 2026-07-05)
