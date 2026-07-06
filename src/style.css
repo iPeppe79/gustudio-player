@@ -82,7 +82,7 @@ img {
 
 /* ── Header ──────────────────────────────────────────────────────────────────── */
 .header {
-  height: 42px;
+  height: 88px;
   background: rgba(0,0,0,0.45);
   border-bottom: 1px solid rgba(255,255,255,0.06);
   display: flex;
@@ -149,8 +149,8 @@ img {
 }
 
 .brand-logo {
-  max-height: 42px;
-  max-width: 140px;
+  max-height: 82px;
+  max-width: 150px;
   width: auto;
   height: auto;
   object-fit: contain;
@@ -162,8 +162,8 @@ img {
 /* ── Cover ───────────────────────────────────────────────────────────────────── */
 .cover-wrap {
   width: 272px;
-  height: 272px;
-  margin: 8px auto 0;
+  height: 230px;
+  margin: 6px auto 0;
   flex-shrink: 0;
   position: relative;
   background: #111120;
@@ -171,7 +171,7 @@ img {
   border-radius: 12px;
 }
 #coverImg {
-  width: 272px; height: 272px;
+  width: 272px; height: 230px;
   object-fit: cover;
   display: block;
   -webkit-user-drag: none;
