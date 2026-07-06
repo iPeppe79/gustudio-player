@@ -229,7 +229,32 @@ rispetto all'audio; il watchdog non interveniva". Diagnosi: **cache mpv grande (
   (online/type/downlink), cores, device_mem, screen, dpr, lang, ua. Comando `mpv_stats`.
 - **Server** (VPS commit): report health mostra ora **MAC + Piattaforma + Rete/CPU/RAM/
   Cache/Reconnect + ultimo warning** (sysBox in `_healthDownloadJson`).
-- Verificato: `cargo check` pulito, `npm run build` ok. Da provare dal vivo il muto/recupero.
+- Verificato dal vivo (DMG 18:33): audio mpv ok, telemetria ricca inviata.
+
+### Sessione 2026-07-06 (sera) — allineamento repo + telemetria PC/utente + pannello health
+- **Allineamento con l'altro Mac**: origin/main aveva lavoro UI parallelo (header più
+  grande, maschera finestra nativa objc2 `apply_native_window_mask`, ICY default 4s,
+  volume 0.35). Mi sono **allineato a origin/main** e riapplicato il mio lavoro backend
+  (watchdog v2 + telemetria + ICY dinamico) come commit unico sopra. UI = quella dell'altro
+  Mac (header grande). Backup del mio lavoro nel branch `backup-watchdog-telemetria`.
+- **Telemetria**: `telemetry.rs` aggiunge `username` (utente OS, `USER`/`USERNAME`) a ogni
+  evento, oltre a `hostname`/`mac`/`platform`. (client commit `9ed6345`, DMG 18:33)
+- **BUG lato server importante — `api_player_health` ricostruisce l'entry** con un
+  sottoinsieme di campi: **scartava `mac` e `username`** (e non salvava l'IP). Fix: entry
+  ora include `username`, `mac`, `ip`. Il `hostname` salvato è quello del client (su questo
+  Mac è impostato = IP `192.168.1.71`; per un nome vero servirebbe inviare il ComputerName).
+- **BUG sysBox — leggeva l'APP_START più VECCHIO** (loop all'indietro su eventi ordinati
+  newest-first) → mostrava campi vuoti. Fix: scandisce in avanti e prende il più recente
+  "ricco" (con username/platform/extra).
+- **Brani suonati nel dettaglio player**: `/api/player-tracks` è vuoto per il player →
+  ora "Brani suonati" si ricava dagli **eventi TRACK_CHANGE** del log (`extra.title/artist/
+  is_spot`), con dedup consecutivi. (prima il tab era vuoto)
+- **Riquadro info dispositivo anche nel MODAL** (non solo nell'export): helper
+  `_deviceInfoBox(events, pi)` in `_renderDetailView` → PC/Utente/MAC/OS/Player/Piattaforma
+  + Rete/CPU/RAM/Cache/Reconnect/ultimo warning.
+- Nota flusso: il server NON salva il payload client grezzo, **ricostruisce** l'entry in
+  `api_player_health` (riga ~75476). Aggiungere un campo lato client richiede aggiungerlo
+  ANCHE lì, altrimenti viene scartato.
 
 ---
 
