@@ -169,11 +169,11 @@ src-tauri/bin/             — sidecar mpv per-arch (NON in git) + README + fetc
 
 **Procedura modifica tts_gui.py** (OBBLIGATORIA — mai editare diretto sul server):
 ```bash
-scp -i ~/.ssh/id_gustudio_vps root@195.14.9.37:/root/gustudio79/tts_gui.py /tmp/tts_gui.py
+scp -i ~/.ssh/id_ed25519 root@195.14.9.37:/root/gustudio79/tts_gui.py /tmp/tts_gui.py
 # edita con Edit tool
 python3 -c "import py_compile; py_compile.compile('/tmp/tts_gui.py', doraise=True)"
-scp -i ~/.ssh/id_gustudio_vps /tmp/tts_gui.py root@195.14.9.37:/root/gustudio79/tts_gui.py
-ssh -i ~/.ssh/id_gustudio_vps root@195.14.9.37 'cd /root/gustudio79 && git add tts_gui.py && git commit -m "..." && systemctl restart gustudio79'
+scp -i ~/.ssh/id_ed25519 /tmp/tts_gui.py root@195.14.9.37:/root/gustudio79/tts_gui.py
+ssh -i ~/.ssh/id_ed25519 root@195.14.9.37 'cd /root/gustudio79 && git add tts_gui.py && git commit -m "..." && systemctl restart gustudio79'
 ```
 
 **player-health dir**: `/root/gustudio79/player-health/{slug}/{uuid}_YYYYMMDD.jsonl`
@@ -201,6 +201,15 @@ Allineato a `.NET NowPlayingService.IsNonMusical`:
 - TRACK_CHANGE spot: arancione `#fb923c`, italico
 - `last_seen` aggiornato da `api_player_health` ad ogni evento → player resta online
   finché manda heartbeat (ogni 60s). Online = `last_seen < 12 minuti fa`.
+- Il badge/storico `stream-listeners` NON misura persone uniche: legge Icecast
+  (`/status-json.xsl` o `/status.xsl`) e mostra **connessioni stream**. Include quindi
+  le postazioni/player collegati e anche eventuali preview/ascolti dal pannello.
+- Le postazioni online vengono da `radio_players.json`/`last_seen`, non da Icecast.
+  Il server normalizza `station_id` con `_player_station_key()` così URL completo,
+  id interno, mount (`funsidelatina`) e vecchi URL legacy convergono sulla stessa
+  stazione. Fix server: `f48aa14b Fix player station matching`.
+- Dopo il fix verificato su VPS: Funside = 4 postazioni totali, 3 online. La UI del
+  popup è stata rinominata da "ascoltatori" a "connessioni stream".
 
 ---
 
