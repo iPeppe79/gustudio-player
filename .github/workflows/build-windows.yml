@@ -4,6 +4,13 @@ name: Build Windows
 
 on:
   workflow_dispatch:
+    inputs:
+      brand:
+        description: "Brand id (funside, professione-casa, gustracks)"
+        default: "funside"
+      tauri_args:
+        description: "Extra args tauri (es. --config src-tauri/tauri.oneradio.conf.json)"
+        default: ""
 
 jobs:
   build:
@@ -51,16 +58,18 @@ jobs:
           Write-Host "Runtime mpv pronto: $sz byte in $runtime"
           Get-ChildItem $runtime | Select-Object Name, Length | Format-Table -AutoSize
 
-      - name: Build Tauri app (funside)
+      - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
+        with:
+          args: ${{ github.event.inputs.tauri_args }}
         env:
-          BRAND: funside
+          BRAND: ${{ github.event.inputs.brand || 'funside' }}
           PLAYER_API_KEY: ${{ secrets.PLAYER_API_KEY }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: player-windows-x64
+          name: player-windows-x64-${{ github.event.inputs.brand || 'funside' }}
           path: |
             src-tauri/target/release/bundle/**/*.exe
             src-tauri/target/release/bundle/**/*.msi
