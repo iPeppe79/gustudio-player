@@ -193,12 +193,22 @@ per-brand (nome app/identifier/titolo/icona; `tauri.conf.json` è statico su fun
 
 **Procedura modifica tts_gui.py** (OBBLIGATORIA — mai editare diretto sul server):
 ```bash
-scp -i ~/.ssh/id_ed25519 root@195.14.9.37:/root/gustudio79/tts_gui.py /tmp/tts_gui.py
+scp -i ~/.ssh/id_gustudio_vps root@195.14.9.37:/root/gustudio79/tts_gui.py /tmp/tts_gui.py
 # edita con Edit tool
 python3 -c "import py_compile; py_compile.compile('/tmp/tts_gui.py', doraise=True)"
-scp -i ~/.ssh/id_ed25519 /tmp/tts_gui.py root@195.14.9.37:/root/gustudio79/tts_gui.py
-ssh -i ~/.ssh/id_ed25519 root@195.14.9.37 'cd /root/gustudio79 && git add tts_gui.py && git commit -m "..." && systemctl restart gustudio79'
+python3 /tmp/check_radio_js.py /tmp/tts_gui.py   # ← se hai toccato _RADIO_HTML/la pagina /radio
+scp -i ~/.ssh/id_gustudio_vps /tmp/tts_gui.py root@195.14.9.37:/root/gustudio79/tts_gui.py
+# il restart lo fa SOLO se il check JS passa (rete di sicurezza anche sul VPS, ha node):
+ssh -i ~/.ssh/id_gustudio_vps root@195.14.9.37 'cd /root/gustudio79 && python3 check_radio_js.py tts_gui.py && git add tts_gui.py && git commit -m "..." && systemctl restart gustudio79'
 ```
+
+**⚠️ /radio non si deve rompere di nuovo** — `_RADIO_HTML` è la pagina intera come stringa
+Python triple-quote con JS dentro. Due trappole (già capitate ×3):
+- `\'` nella stringa `"""..."""` diventa `'` → **niente apici singoli annidati** in stringhe
+  JS a singoli apici (es. `onchange="f('x')"` dentro `'...'`). Usa un helper o `\\'`.
+- `\r` `\n` diventano CR/LF reali → spezzano la stringa JS. Per il CSV usa `\\r\\n`.
+- **Sempre** `check_radio_js.py` (node --check sui blocchi `<script>`) prima del restart.
+  C'è un commento-guardia sopra `_RADIO_HTML` in tts_gui.py.
 
 **player-health dir**: `/root/gustudio79/player-health/{slug}/{uuid}_YYYYMMDD.jsonl`
 - slug = mount name dello stream (es. `funsidelatina`, `profcasa`)
