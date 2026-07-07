@@ -40,6 +40,9 @@ secrets.json
 src-tauri/bin/*
 !src-tauri/bin/README.md
 !src-tauri/bin/fetch-mpv.sh
+!src-tauri/bin/mpv-win/
+src-tauri/bin/mpv-win/*
+!src-tauri/bin/mpv-win/.gitkeep
 
 # --- OS / editor ---
 .DS_Store

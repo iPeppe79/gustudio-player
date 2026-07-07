@@ -1,5 +1,5 @@
-# Build dedicato Windows x64 (manuale). Scarica da solo un mpv self-contained
-# (zhongfly/mpv-winbuild), lo mette come sidecar e produce l'installer .msi/.exe.
+# Build dedicato Windows x64 (manuale). Scarica mpv x64 completo
+# (mpv.exe + DLL), lo imbarca come risorsa e produce installer .msi/.exe.
 name: Build Windows
 
 on:
@@ -23,25 +23,32 @@ jobs:
       - name: Install deps
         run: npm ci
 
-      - name: Fetch mpv sidecar (Windows, self-contained)
+      - name: Fetch mpv runtime (Windows x64)
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $dir = "src-tauri/bin"
+          $runtime = "$dir/mpv-win"
           New-Item -ItemType Directory -Force -Path $dir | Out-Null
-          # Ultima release di zhongfly/mpv-winbuild: asset mpv-x86_64-<data>-git-*.7z
-          # (escludo le varianti -v3, che richiedono CPU recenti, per compatibilità).
-          $rel = Invoke-RestMethod -Uri "https://api.github.com/repos/zhongfly/mpv-winbuild/releases/latest" -Headers @{ "User-Agent" = "gha" }
-          $asset = $rel.assets | Where-Object { $_.name -match '^mpv-x86_64-\d' -and $_.name -notmatch 'v3' -and $_.name -like '*.7z' } | Select-Object -First 1
-          if (-not $asset) { throw "asset mpv x86_64 non trovato nella release" }
-          Write-Host "Scarico:" $asset.name
-          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "mpv-win.7z"
+          New-Item -ItemType Directory -Force -Path $runtime | Out-Null
+
+          # Build x64 ufficiale shinchiro/SourceForge. Non copiare solo mpv.exe:
+          # su Windows servono le DLL accanto al binario, altrimenti mpv non crea
+          # la pipe IPC e il player resta per sempre in BUFFERING.
+          $url = "https://sourceforge.net/projects/mpv-player-windows/files/64bit/mpv-x86_64-20260607-git-71ebd08.7z/download"
+          Write-Host "Scarico: $url"
+          Invoke-WebRequest -Uri $url -OutFile "mpv-win.7z"
           & 7z x "mpv-win.7z" "-ompv-win" -y | Out-Null
           $exe = Get-ChildItem -Path "mpv-win" -Recurse -Filter "mpv.exe" | Select-Object -First 1
           if (-not $exe) { throw "mpv.exe non trovato nell'archivio" }
+          Copy-Item "$($exe.Directory.FullName)\*" $runtime -Recurse -Force
+
+          # Mantieni anche il sidecar atteso da externalBin: serve al bundler Tauri.
+          # Il runtime reale usato da mpv.rs su Windows è invece bin/mpv-win/mpv.exe.
           Copy-Item $exe.FullName "$dir/mpv-x86_64-pc-windows-msvc.exe" -Force
-          $sz = (Get-Item "$dir/mpv-x86_64-pc-windows-msvc.exe").Length
-          Write-Host "Sidecar mpv pronto: $sz byte"
+          $sz = (Get-ChildItem $runtime -Recurse -File | Measure-Object -Property Length -Sum).Sum
+          Write-Host "Runtime mpv pronto: $sz byte in $runtime"
+          Get-ChildItem $runtime | Select-Object Name, Length | Format-Table -AutoSize
 
       - name: Build Tauri app (funside)
         uses: tauri-apps/tauri-action@v0

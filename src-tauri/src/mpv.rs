@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde_json::json;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
@@ -62,6 +62,7 @@ struct Inner {
     cache_ms: AtomicU64,      // demuxer-cache-duration corrente (ms) — profondità buffer
     reconnects: AtomicU64,    // quante volte il watchdog ha riavviato mpv in questa sessione
     last_warn: Mutex<String>, // ultima riga di warning/errore da stderr mpv
+    resource_dir: Mutex<Option<PathBuf>>,
 }
 
 fn now_ms() -> u64 {
@@ -94,6 +95,7 @@ impl MpvState {
                 cache_ms: AtomicU64::new(0),
                 reconnects: AtomicU64::new(0),
                 last_warn: Mutex::new(String::new()),
+                resource_dir: Mutex::new(None),
             }),
         }
     }
@@ -118,8 +120,12 @@ impl MpvState {
 
     /// Avvia il supervisore (idempotente). Da chiamare una volta con l'AppHandle.
     pub fn init(&self, app: AppHandle) {
+        let resource_dir = app.path().resource_dir().ok();
         if let Ok(mut g) = self.inner.app.lock() {
             *g = Some(app);
+        }
+        if let Ok(mut g) = self.inner.resource_dir.lock() {
+            *g = resource_dir;
         }
         if self.inner.started.swap(true, Ordering::SeqCst) {
             return; // già avviato
@@ -199,8 +205,25 @@ fn emit(inner: &Arc<Inner>, event: &str, payload: serde_json::Value) {
 // In bundle Tauri copia il sidecar `bin/mpv-<triple>` accanto all'eseguibile
 // spogliato del triple → `<exe_dir>/mpv[.exe]`. In dev ripiega su un `bin/` locale
 // o su mpv di sistema (PATH).
-fn mpv_binary() -> String {
+fn mpv_binary(inner: &Arc<Inner>) -> String {
     let exe_name = if cfg!(windows) { "mpv.exe" } else { "mpv" };
+
+    // Windows: usa la cartella risorsa completa `mpv-win`, non il solo sidecar.
+    // Le build shinchiro/SourceForge portano DLL accanto a mpv.exe; se si avvia
+    // solo l'exe copiato da Tauri, Windows non trova le dipendenze e resta buffering.
+    #[cfg(windows)]
+    if let Ok(g) = inner.resource_dir.lock() {
+        if let Some(dir) = g.as_ref() {
+            for cand in [
+                dir.join("mpv-win").join(exe_name),
+                dir.join("bin").join("mpv-win").join(exe_name),
+            ] {
+                if cand.exists() {
+                    return cand.to_string_lossy().to_string();
+                }
+            }
+        }
+    }
 
     // 1) sidecar accanto all'eseguibile
     if let Ok(exe) = std::env::current_exe() {
@@ -260,7 +283,7 @@ async fn supervisor(inner: Arc<Inner>) {
         #[cfg(unix)]
         let _ = std::fs::remove_file(&sock_path);
 
-        let binary = mpv_binary();
+        let binary = mpv_binary(&inner);
         let mut cmd = Command::new(&binary);
         cmd.args([
             "--no-video",
@@ -296,6 +319,7 @@ async fn supervisor(inner: Arc<Inner>) {
         let mut child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
+                set_warn(&inner, format!("spawn_failed: {binary}: {e}"));
                 emit(
                     &inner,
                     "mpv-state",
@@ -308,11 +332,32 @@ async fn supervisor(inner: Arc<Inner>) {
             }
         };
 
+        // Cattura stderr SUBITO. Se mpv esce prima di creare la pipe IPC
+        // (DLL mancanti, opzione non supportata, crash loader), altrimenti perdiamo
+        // l'unico messaggio utile e il frontend vede solo `alive=false`.
+        if let Some(stderr) = child.stderr.take() {
+            let inner_err = inner.clone();
+            tokio::spawn(async move {
+                let mut lines = BufReader::new(stderr).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    let l = line.trim().to_string();
+                    if l.is_empty() { continue; }
+                    eprintln!("[mpv stderr] {l}");
+                    set_warn(&inner_err, l.clone());
+                    emit(&inner_err, "mpv-warn", json!({ "line": l }));
+                }
+            });
+        }
+
         // connessione socket con retry
         let stream = connect_ipc(&sock_path).await;
         let (reader, writer) = match stream {
             Some(rw) => rw,
             None => {
+                let last_warn = inner.last_warn.lock().ok().map(|g| g.clone()).unwrap_or_default();
+                let reason = format!("ipc_connect_failed: binary={binary} pipe={sock_path} last_warn={last_warn}");
+                set_warn(&inner, reason.clone());
+                emit(&inner, "mpv-state", json!({ "phase": "error", "reason": reason }));
                 eprintln!("[mpv] IPC socket non connesso: {sock_path}");
                 let mut child = child;
                 let _ = child.kill().await;
@@ -340,21 +385,6 @@ async fn supervisor(inner: Arc<Inner>) {
         inner.alive.store(true, Ordering::Relaxed);
         attempt = 0;
         emit(&inner, "mpv-ready", json!({}));
-
-        // ── stderr mpv → warning per il troubleshooting ──
-        if let Some(stderr) = child.stderr.take() {
-            let inner_err = inner.clone();
-            tokio::spawn(async move {
-                let mut lines = BufReader::new(stderr).lines();
-                while let Ok(Some(line)) = lines.next_line().await {
-                    let l = line.trim().to_string();
-                    if l.is_empty() { continue; }
-                    eprintln!("[mpv stderr] {l}");
-                    if let Ok(mut g) = inner_err.last_warn.lock() { *g = l.clone(); }
-                    emit(&inner_err, "mpv-warn", json!({ "line": l }));
-                }
-            });
-        }
 
         // observe_property (stessi id del vecchio player)
         let _ = tx.send(json!({"command":["observe_property",1,"playback-time"]}).to_string() + "\n");
@@ -406,6 +436,12 @@ async fn supervisor(inner: Arc<Inner>) {
         // backoff leggero anti-spam
         let backoff = (attempt.min(5) as u64).max(1);
         tokio::time::sleep(Duration::from_millis(400 * backoff)).await;
+    }
+}
+
+fn set_warn(inner: &Arc<Inner>, line: String) {
+    if let Ok(mut g) = inner.last_warn.lock() {
+        *g = line;
     }
 }
 
@@ -624,7 +660,7 @@ fn start_pcm(inner: Arc<Inner>, url: String) {
     // finestra di grazia: evita che il watchdog PCM ri-scatti col timestamp vecchio
     inner.pcm_last_data.store(now_ms(), Ordering::Relaxed);
 
-    let binary = mpv_binary();
+    let binary = mpv_binary(&inner);
     let mut cmd = Command::new(&binary);
     cmd.args([
         "--no-video",

@@ -35,6 +35,9 @@
       "icons/icon.png",
       "icons/icon.ico"
     ],
+    "resources": [
+      "bin/mpv-win"
+    ],
     "externalBin": [
       "bin/mpv"
     ]

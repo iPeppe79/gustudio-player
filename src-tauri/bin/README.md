@@ -13,7 +13,7 @@ Ogni piattaforma deve avere il suo binario, con il triple nel nome:
 |------------------|----------------------------|--------------------------------------|
 | macOS Apple Sil. | `aarch64-apple-darwin`     | `mpv-aarch64-apple-darwin`           |
 | macOS Intel      | `x86_64-apple-darwin`      | `mpv-x86_64-apple-darwin`            |
-| Windows x64      | `x86_64-pc-windows-msvc`   | `mpv-x86_64-pc-windows-msvc.exe`     |
+| Windows x64      | `x86_64-pc-windows-msvc`   | `mpv-x86_64-pc-windows-msvc.exe` + `mpv-win/mpv.exe` con DLL |
 | Windows ARM64    | `aarch64-pc-windows-msvc`  | `mpv-aarch64-pc-windows-msvc.exe`    |
 
 > IMPORTANTE: devono essere **binari self-contained** (statici o con le loro
@@ -26,8 +26,10 @@ Ogni piattaforma deve avere il suo binario, con il triple nel nome:
 
 ## Come procurarli
 
-- **Windows**: build self-contained di shinchiro
-  (https://sourceforge.net/projects/mpv-player-windows/files/) — `mpv.exe`.
+- **Windows**: build shinchiro
+  (https://sourceforge.net/projects/mpv-player-windows/files/) — copiare tutta la
+  cartella che contiene `mpv.exe`, non solo l'eseguibile. In produzione `mpv.rs`
+  avvia `resources/mpv-win/mpv.exe` così le DLL restano accanto al binario.
 - **macOS**: build statica (es. `mpv` da https://laboratory.stolendata.net/~djinn/mpv_osx/
   o compilata con `mpv-build` con link statico), una per arch.
 
