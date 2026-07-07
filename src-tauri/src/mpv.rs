@@ -647,152 +647,202 @@ fn stop_pcm(inner: &Arc<Inner>) {
 fn start_pcm(inner: Arc<Inner>, url: String) {
     stop_pcm(&inner);
 
-    // Windows: niente ramo PCM/FFT (come il vecchio player Electron). mpv non scrive
-    // PCM su una pipe stdout affidabile lì; l'EQ resta piatto ma l'audio funziona.
-    #[cfg(windows)]
-    {
-        let _ = (inner, url);
-        return;
-    }
-    #[cfg(unix)]
-    {
     let my_gen = inner.pcm_gen.load(Ordering::SeqCst);
     // finestra di grazia: evita che il watchdog PCM ri-scatti col timestamp vecchio
     inner.pcm_last_data.store(now_ms(), Ordering::Relaxed);
 
-    let binary = mpv_binary(&inner);
-    let mut cmd = Command::new(&binary);
-    cmd.args([
-        "--no-video",
-        "--no-terminal",
-        "--no-config",
-        "--quiet",
-        "--ao=pcm",
-        // mpv NON scrive su "-": /dev/stdout sì (verificato). Va sul fd della pipe.
-        "--ao-pcm-file=/dev/stdout",
-        "--ao-pcm-waveheader=no",   // niente header WAV → solo campioni
-        "--af=aformat=sample_fmts=flt:channel_layouts=mono:sample_rates=44100",
-        // Solo analisi FFT: non esce sulle casse, deve restare alto per non ammazzare l'EQ.
-        "--volume=100",
-        &url,
-    ]);
-    cmd.stdin(std::process::Stdio::null());
-    cmd.stdout(std::process::Stdio::piped());
-    cmd.stderr(std::process::Stdio::null());
-    cmd.kill_on_drop(true);
+    #[cfg(unix)]
+    {
+        let binary = mpv_binary(&inner);
+        let mut cmd = Command::new(&binary);
+        cmd.args([
+            "--no-video",
+            "--no-terminal",
+            "--no-config",
+            "--quiet",
+            "--ao=pcm",
+            // mpv NON scrive su "-": /dev/stdout sì (verificato). Va sul fd della pipe.
+            "--ao-pcm-file=/dev/stdout",
+            "--ao-pcm-waveheader=no",
+            "--af=aformat=sample_fmts=flt:channel_layouts=mono:sample_rates=44100",
+            // Solo analisi FFT: non esce sulle casse, deve restare alto per non ammazzare l'EQ.
+            "--volume=100",
+            &url,
+        ]);
+        cmd.stdin(std::process::Stdio::null());
+        cmd.stdout(std::process::Stdio::piped());
+        cmd.stderr(std::process::Stdio::null());
+        cmd.kill_on_drop(true);
+
+        let mut child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("[pcm] spawn error: {e}");
+                return;
+            }
+        };
+        let stdout = child.stdout.take();
+        if let Ok(mut g) = inner.pcm_child.lock() {
+            *g = Some(child);
+        }
+
+        let Some(stdout) = stdout else { return };
+        tokio::spawn(pump_pcm(inner, my_gen, stdout));
+    }
+
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
+        use tokio::net::windows::named_pipe::ServerOptions;
+
+        let pipe_path = format!(r"\\.\pipe\gustudio-eq-{}-{}", std::process::id(), my_gen);
+        let server = match ServerOptions::new().first_pipe_instance(true).create(&pipe_path) {
+            Ok(s) => s,
+            Err(e) => {
+                let line = format!("pcm_pipe_create_failed: {e}");
+                eprintln!("[pcm] {line}");
+                set_warn(&inner, line.clone());
+                emit(&inner, "mpv-warn", json!({ "line": line }));
+                return;
+            }
+        };
+
+        let binary = mpv_binary(&inner);
+        let mut cmd = Command::new(&binary);
+        cmd.args([
+            "--no-video",
+            "--no-terminal",
+            "--no-config",
+            "--quiet",
+            "--ao=pcm",
+            &format!("--ao-pcm-file={pipe_path}"),
+            "--ao-pcm-waveheader=no",
+            "--af=aformat=sample_fmts=flt:channel_layouts=mono:sample_rates=44100",
+            "--volume=100",
+            &url,
+        ]);
+        cmd.stdin(std::process::Stdio::null());
+        cmd.stdout(std::process::Stdio::null());
+        cmd.stderr(std::process::Stdio::null());
+        cmd.kill_on_drop(true);
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         cmd.creation_flags(CREATE_NO_WINDOW);
-    }
 
-    let mut child = match cmd.spawn() {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("[pcm] spawn error: {e}");
-            return;
+        let child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(e) => {
+                let line = format!("pcm_spawn_failed: {e}");
+                eprintln!("[pcm] {line}");
+                set_warn(&inner, line.clone());
+                emit(&inner, "mpv-warn", json!({ "line": line }));
+                return;
+            }
+        };
+        if let Ok(mut g) = inner.pcm_child.lock() {
+            *g = Some(child);
         }
-    };
-    let stdout = child.stdout.take();
-    if let Ok(mut g) = inner.pcm_child.lock() {
-        *g = Some(child);
-    }
 
-    let Some(mut stdout) = stdout else { return };
-    tokio::spawn(async move {
-        use rustfft::{num_complex::Complex, FftPlanner};
-        let mut planner = FftPlanner::<f32>::new();
-        let fft = planner.plan_fft_forward(FFT_SIZE);
-
-        // finestra di Hann precalcolata
-        let hann: Vec<f32> = (0..FFT_SIZE)
-            .map(|i| {
-                let x = std::f32::consts::PI * i as f32 / (FFT_SIZE as f32 - 1.0);
-                x.sin() * x.sin()
-            })
-            .collect();
-
-        // edge log-spaziati sui bin 1..FFT_SIZE/2
-        let bin_max = FFT_SIZE / 2;
-        let band_edges: Vec<usize> = (0..=NUM_BANDS)
-            .map(|b| {
-                let frac = b as f32 / NUM_BANDS as f32;
-                let lo = 1.0_f32.ln();
-                let hi = (bin_max as f32).ln();
-                (lo + (hi - lo) * frac).exp().round() as usize
-            })
-            .map(|v| v.clamp(1, bin_max))
-            .collect();
-
-        let mut byte_buf: Vec<u8> = Vec::with_capacity(FFT_SIZE * 8);
-        let mut samples: Vec<f32> = Vec::with_capacity(FFT_SIZE * 4);
-        let mut read_buf = [0u8; 8192];
-        let mut last_emit = Instant::now();
-
-        loop {
-            if inner.pcm_gen.load(Ordering::SeqCst) != my_gen {
-                break; // superato da un nuovo start_pcm/stop_pcm
-            }
-            let n = match stdout.read(&mut read_buf).await {
-                Ok(0) => break, // EOF
-                Ok(n) => n,
-                Err(_) => break,
-            };
-            // timestamp ultimo dato PCM → il watchdog rileva "EQ frizzato"/flusso fermo
-            inner.pcm_last_data.store(now_ms(), Ordering::Relaxed);
-            byte_buf.extend_from_slice(&read_buf[..n]);
-
-            // bytes → f32 LE
-            let usable = byte_buf.len() - (byte_buf.len() % 4);
-            let mut i = 0;
-            while i < usable {
-                let b = [byte_buf[i], byte_buf[i + 1], byte_buf[i + 2], byte_buf[i + 3]];
-                samples.push(f32::from_le_bytes(b));
-                i += 4;
-            }
-            byte_buf.drain(0..usable);
-
-            // STFT a salti di FFT_HOP
-            while samples.len() >= FFT_SIZE {
-                let mut spectrum: Vec<Complex<f32>> = (0..FFT_SIZE)
-                    .map(|k| Complex {
-                        re: samples[k] * hann[k],
-                        im: 0.0,
-                    })
-                    .collect();
-                fft.process(&mut spectrum);
-
-                // magnitudini → bande
-                let mut bands = vec![0.0f32; NUM_BANDS];
-                for band in 0..NUM_BANDS {
-                    let lo = band_edges[band];
-                    let hi = band_edges[band + 1].max(lo + 1);
-                    let mut sum = 0.0f32;
-                    let mut cnt = 0u32;
-                    for bin in lo..hi.min(bin_max) {
-                        let m = spectrum[bin].norm() / FFT_SIZE as f32;
-                        sum += m;
-                        cnt += 1;
-                    }
-                    let avg = if cnt > 0 { sum / cnt as f32 } else { 0.0 };
-                    // scala percettiva + gain euristico
-                    let v = (avg * 22.0).sqrt();
-                    bands[band] = v.clamp(0.0, 1.0);
-                }
-
-                samples.drain(0..FFT_HOP);
-
-                // throttle ~60fps
-                if last_emit.elapsed().as_millis() >= 14 {
-                    last_emit = Instant::now();
-                    if inner.pcm_gen.load(Ordering::SeqCst) != my_gen {
-                        break;
-                    }
-                    emit(&inner, "eq-bands", json!({ "bands": bands }));
+        let inner_for_pipe = inner.clone();
+        tokio::spawn(async move {
+            match server.connect().await {
+                Ok(()) => pump_pcm(inner_for_pipe, my_gen, server).await,
+                Err(e) => {
+                    let line = format!("pcm_pipe_connect_failed: {e}");
+                    eprintln!("[pcm] {line}");
+                    set_warn(&inner_for_pipe, line.clone());
+                    emit(&inner_for_pipe, "mpv-warn", json!({ "line": line }));
                 }
             }
+        });
+    }
+}
+
+async fn pump_pcm<R>(inner: Arc<Inner>, my_gen: u64, mut reader: R)
+where
+    R: AsyncRead + Unpin + Send + 'static,
+{
+    use rustfft::{num_complex::Complex, FftPlanner};
+    let mut planner = FftPlanner::<f32>::new();
+    let fft = planner.plan_fft_forward(FFT_SIZE);
+
+    let hann: Vec<f32> = (0..FFT_SIZE)
+        .map(|i| {
+            let x = std::f32::consts::PI * i as f32 / (FFT_SIZE as f32 - 1.0);
+            x.sin() * x.sin()
+        })
+        .collect();
+
+    let bin_max = FFT_SIZE / 2;
+    let band_edges: Vec<usize> = (0..=NUM_BANDS)
+        .map(|b| {
+            let frac = b as f32 / NUM_BANDS as f32;
+            let lo = 1.0_f32.ln();
+            let hi = (bin_max as f32).ln();
+            (lo + (hi - lo) * frac).exp().round() as usize
+        })
+        .map(|v| v.clamp(1, bin_max))
+        .collect();
+
+    let mut byte_buf: Vec<u8> = Vec::with_capacity(FFT_SIZE * 8);
+    let mut samples: Vec<f32> = Vec::with_capacity(FFT_SIZE * 4);
+    let mut read_buf = [0u8; 8192];
+    let mut last_emit = Instant::now();
+
+    loop {
+        if inner.pcm_gen.load(Ordering::SeqCst) != my_gen {
+            break;
         }
-    });
-    } // #[cfg(unix)]
+        let n = match reader.read(&mut read_buf).await {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(_) => break,
+        };
+        inner.pcm_last_data.store(now_ms(), Ordering::Relaxed);
+        byte_buf.extend_from_slice(&read_buf[..n]);
+
+        let usable = byte_buf.len() - (byte_buf.len() % 4);
+        let mut i = 0;
+        while i < usable {
+            let b = [byte_buf[i], byte_buf[i + 1], byte_buf[i + 2], byte_buf[i + 3]];
+            samples.push(f32::from_le_bytes(b));
+            i += 4;
+        }
+        byte_buf.drain(0..usable);
+
+        while samples.len() >= FFT_SIZE {
+            let mut spectrum: Vec<Complex<f32>> = (0..FFT_SIZE)
+                .map(|k| Complex {
+                    re: samples[k] * hann[k],
+                    im: 0.0,
+                })
+                .collect();
+            fft.process(&mut spectrum);
+
+            let mut bands = vec![0.0f32; NUM_BANDS];
+            for band in 0..NUM_BANDS {
+                let lo = band_edges[band];
+                let hi = band_edges[band + 1].max(lo + 1);
+                let mut sum = 0.0f32;
+                let mut cnt = 0u32;
+                for bin in lo..hi.min(bin_max) {
+                    let m = spectrum[bin].norm() / FFT_SIZE as f32;
+                    sum += m;
+                    cnt += 1;
+                }
+                let avg = if cnt > 0 { sum / cnt as f32 } else { 0.0 };
+                let v = (avg * 22.0).sqrt();
+                bands[band] = v.clamp(0.0, 1.0);
+            }
+
+            samples.drain(0..FFT_HOP);
+
+            if last_emit.elapsed().as_millis() >= 14 {
+                last_emit = Instant::now();
+                if inner.pcm_gen.load(Ordering::SeqCst) != my_gen {
+                    break;
+                }
+                emit(&inner, "eq-bands", json!({ "bands": bands }));
+            }
+        }
+    }
 }

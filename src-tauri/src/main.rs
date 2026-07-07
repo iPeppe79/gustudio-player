@@ -44,7 +44,49 @@ fn apply_native_window_mask(app: &tauri::App) {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "windows")]
+fn apply_native_window_mask(app: &tauri::App) {
+    use tauri::Manager;
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::Graphics::Gdi::{CreateRoundRectRgn, SetWindowRgn};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindowLongPtrW, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_LAYERED,
+    };
+
+    let Some(window) = app.get_webview_window("main") else {
+        eprintln!("[window-mask] main window not found");
+        return;
+    };
+
+    let hwnd = match window.hwnd() {
+        Ok(hwnd) => hwnd,
+        Err(err) => {
+            eprintln!("[window-mask] hwnd unavailable: {err}");
+            return;
+        }
+    };
+
+    unsafe {
+        let hwnd = HWND(hwnd.0);
+        let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex_style | WS_EX_LAYERED.0 as isize);
+
+        let scale = window.scale_factor().unwrap_or(1.0);
+        let w = (300.0 * scale).round() as i32;
+        let h = (502.0 * scale).round() as i32;
+        let radius = (18.0 * scale).round() as i32;
+        let region = CreateRoundRectRgn(0, 0, w + 1, h + 1, radius * 2, radius * 2);
+        if region.0 == 0 {
+            eprintln!("[window-mask] CreateRoundRectRgn failed");
+            return;
+        }
+        if SetWindowRgn(hwnd, region, true).0 == 0 {
+            eprintln!("[window-mask] SetWindowRgn failed");
+        }
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn apply_native_window_mask(_app: &tauri::App) {}
 
 #[cfg(target_os = "macos")]
