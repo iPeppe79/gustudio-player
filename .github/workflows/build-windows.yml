@@ -37,7 +37,8 @@ jobs:
           # la pipe IPC e il player resta per sempre in BUFFERING.
           $url = "https://sourceforge.net/projects/mpv-player-windows/files/64bit/mpv-x86_64-20260607-git-71ebd08.7z/download"
           Write-Host "Scarico: $url"
-          Invoke-WebRequest -Uri $url -OutFile "mpv-win.7z"
+          & curl.exe -L --fail --retry 3 --retry-delay 2 -A "github-actions" -o "mpv-win.7z" $url
+          if ($LASTEXITCODE -ne 0) { throw "download mpv fallito: curl exit $LASTEXITCODE" }
           & 7z x "mpv-win.7z" "-ompv-win" -y | Out-Null
           $exe = Get-ChildItem -Path "mpv-win" -Recurse -Filter "mpv.exe" | Select-Object -First 1
           if (-not $exe) { throw "mpv.exe non trovato nell'archivio" }
