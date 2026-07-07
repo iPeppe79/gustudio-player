@@ -76,11 +76,11 @@ fn apply_native_window_mask(app: &tauri::App) {
         let h = (502.0 * scale).round() as i32;
         let radius = (18.0 * scale).round() as i32;
         let region = CreateRoundRectRgn(0, 0, w + 1, h + 1, radius * 2, radius * 2);
-        if region.0 == 0 {
+        if region.0.is_null() {
             eprintln!("[window-mask] CreateRoundRectRgn failed");
             return;
         }
-        if SetWindowRgn(hwnd, region, true).0 == 0 {
+        if SetWindowRgn(hwnd, region, true) == 0 {
             eprintln!("[window-mask] SetWindowRgn failed");
         }
     }

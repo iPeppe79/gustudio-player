@@ -311,7 +311,6 @@ async fn supervisor(inner: Arc<Inner>) {
         cmd.kill_on_drop(true);
         #[cfg(windows)]
         {
-            use std::os::windows::process::CommandExt;
             const CREATE_NO_WINDOW: u32 = 0x0800_0000;
             cmd.creation_flags(CREATE_NO_WINDOW);
         }
@@ -692,7 +691,6 @@ fn start_pcm(inner: Arc<Inner>, url: String) {
 
     #[cfg(windows)]
     {
-        use std::os::windows::process::CommandExt;
         use tokio::net::windows::named_pipe::ServerOptions;
 
         let pipe_path = format!(r"\\.\pipe\gustudio-eq-{}-{}", std::process::id(), my_gen);
