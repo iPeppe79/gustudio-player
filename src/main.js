@@ -564,13 +564,31 @@ function drawEq() {
 // blu→giallo→rosso (colori brand funside), cima arrotondata e riflesso sotto.
 const _EQ_BAR_COUNT = 22; // non troppo fitto
 
-// interpolazione colore blu→giallo→rosso su t∈[0,1]
-function _eqColor(t) {
-  const stops = [
-    [0.0, [41, 171, 226]],   // #29ABE2 blu
-    [0.5, [245, 197, 66]],   // #F5C542 giallo
-    [1.0, [229, 62, 45]],    // #E53E2D rosso
+// Gradiente EQ pilotato dal brand: brand.eqColors = ["#hex", ...] (default funside).
+function _hexToRgb(h) {
+  const m = /^#?([0-9a-f]{6})$/i.exec((h || '').trim());
+  if (!m) return null;
+  const n = parseInt(m[1], 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function _eqStops() {
+  const hexes = (state.brand && state.brand.eqColors) || null;
+  if (hexes && hexes.length >= 2) {
+    const rgbs = hexes.map(_hexToRgb).filter(Boolean);
+    if (rgbs.length >= 2) {
+      return rgbs.map((rgb, i) => [i / (rgbs.length - 1), rgb]);
+    }
+  }
+  return [
+    [0.0, [41, 171, 226]],
+    [0.5, [245, 197, 66]],
+    [1.0, [229, 62, 45]],
   ];
+}
+
+// interpolazione colore lungo gli stop del brand su t∈[0,1]
+function _eqColor(t) {
+  const stops = _eqStops();
   let a = stops[0], b = stops[stops.length - 1];
   for (let i = 0; i < stops.length - 1; i++) {
     if (t >= stops[i][0] && t <= stops[i + 1][0]) { a = stops[i]; b = stops[i + 1]; break; }

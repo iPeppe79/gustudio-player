@@ -4,8 +4,22 @@
   "app": {
     "windows": [
       {
-        "title": "One Radio"
+        "title": "One Radio",
+        "width": 320,
+        "height": 524,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "center": true,
+        "shadow": false
       }
+    ]
+  },
+  "bundle": {
+    "icon": [
+      "icons/oneradio.icns",
+      "icons/oneradio-icon.png",
+      "icons/oneradio.ico"
     ]
   }
 }

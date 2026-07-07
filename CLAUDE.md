@@ -156,6 +156,30 @@ src-tauri/bin/             — sidecar mpv per-arch (NON in git) + README + fetc
 - Installa: `rm -rf "/Applications/FunSide Radio.app" && cp -R "...bundle/macos/FunSide Radio.app" "/Applications/FunSide Radio.app"`
 - **MAI committare**: dist/ target/ *.dll *.dylib .env
 
+## MULTI-BRAND (One Radio, GUSTracks, …) — VERIFICATO 07/07/2026
+Brand scelto a build-time con `BRAND=<id>` (frontend `__BRAND__`) **+** override tauri
+per-brand (nome app/identifier/titolo/icona; `tauri.conf.json` è statico su funside).
+- **Frontend**: `src/public/<brand>.json` (streamUrl, theme, `colors`, **`eqColors`**,
+  `fallbackCover`, logoHeight). L'EQ è **pilotato dal brand**: `_eqColor`/`_eqStops` legge
+  `brand.eqColors` (array hex; default funside blu→giallo→rosso). One Radio: `["#B8B8B8","#E53E2D"]`.
+- **Asset per-brand** in `src/public/`: `<brand>-logo.png` (header) + `<brand>-cover.png`.
+- **Override tauri**: `src-tauri/tauri.<brand>.conf.json` con productName, identifier,
+  `app.windows[0]` COMPLETO (il merge SOSTITUISCE gli array: se metti solo `{title}` la
+  finestra perde dimensioni/trasparenza → 800×600 decorata!), `bundle.icon`.
+- **Icone**: da `logo.png` quadrato → `icons/<brand>.icns` (iconutil) + `.ico` (PIL) + `-icon.png` 1024.
+- **Comando (arm64, One Radio)**:
+  ```
+  BRAND=professione-casa npm run tauri build -- --config src-tauri/tauri.oneradio.conf.json
+  ```
+  → `One Radio.app` + `One Radio_0.1.0_aarch64.dmg`. arm64 in Drive `PLAYER/ONE RADIO/`.
+- **One Radio (professione-casa)**: stream `profcasa`, rosso #E53E2D, logo grigio+rosso,
+  identifier `it.gustudio.oneradio`, override `tauri.oneradio.conf.json`.
+- **x64 Intel**: STESSO comando sull'altro Mac. ⚠ come funside x64, il bundle deve includere
+  le **dylib mpv** in `<App>/Contents/MacOS/lib` (Homebrew non portabile). DMG ~6 MB = rotto
+  (`Library not loaded: @executable_path/lib/libass...`).
+- **CI**: `build-players.yml` è parametrico (`workflow_dispatch` inputs `brand` + `tauri_args`).
+  One Radio: brand=`professione-casa`, tauri_args=`--config src-tauri/tauri.oneradio.conf.json`.
+
 ---
 
 ## VPS — ACCESSO E DEPLOY
