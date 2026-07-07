@@ -1,0 +1,11 @@
+{
+  "productName": "One Radio",
+  "identifier": "it.gustudio.oneradio",
+  "app": {
+    "windows": [
+      {
+        "title": "One Radio"
+      }
+    ]
+  }
+}

@@ -10,6 +10,15 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      brand:
+        description: "Brand frontend da compilare"
+        required: false
+        default: "funside"
+      tauri_args:
+        description: "Argomenti extra per tauri build"
+        required: false
+        default: ""
 
 jobs:
   build:
@@ -94,6 +103,7 @@ jobs:
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
+          BRAND: ${{ github.event.inputs.brand || 'funside' }}
           # la chiave del player come SECRET, mai in chiaro nel repo
           PLAYER_API_KEY: ${{ secrets.PLAYER_API_KEY }}
           # Firma macOS: il bundler firma anche il sidecar mpv se questi sono presenti.
@@ -103,6 +113,8 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          args: ${{ github.event.inputs.tauri_args }}
         # tauri-action builda e raccoglie gli installer nativi in automatico
 
       - name: Upload artifact

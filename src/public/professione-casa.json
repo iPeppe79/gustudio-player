@@ -4,9 +4,11 @@
   "windowTitle": "One Radio",
   "streamUrl": "https://stream2.multi-radio.com/profcasa",
   "theme": {
-    "primary": "#E53E2D",
+    "primary": "#E30613",
     "background": "#101010",
     "text": "#FFFFFF"
   },
-  "logoHeight": 22
+  "colors": ["#E30613", "#FFFFFF", "#111111"],
+  "logoHeight": 34,
+  "fallbackCover": "/professione-casa-cover.png"
 }
