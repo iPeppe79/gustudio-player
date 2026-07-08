@@ -305,23 +305,34 @@ async function fetchCover(title, artist) {
 }
 
 // ── Telemetria ────────────────────────────────────────────────────────────────
-// Brand B2C (community): setup con nome/cognome/indirizzo/whatsapp, password hardcodata.
+// Brand B2C (community): setup con dati utente + consensi, password hardcodata, dati alla lista community.
 function isConsumer() { return !!(state.brand && state.brand.consumerMode); }
+const POLICY_VERSION = 'v1-2026-07';
 
 function _val(id) { const e = document.getElementById(id); return e ? e.value.trim() : ''; }
+function _chk(id) { const e = document.getElementById(id); return !!(e && e.checked); }
 
 function getSetupData() {
   if (isConsumer()) {
     const nome = _val('setupNome'), cognome = _val('setupCognome');
-    const indirizzo = _val('setupIndirizzo'), whatsapp = _val('setupWhatsapp');
     const full = (nome + ' ' + cognome).trim();
     return {
-      // mappatura sui campi di registrazione esistenti (destinazione A)
-      insegna: full, referente: full, via: indirizzo, citta: '', email: '',
-      telefono: whatsapp,
+      // registrazione DISPOSITIVO (minima: solo identificazione installazione)
+      insegna: full, referente: '', via: '', citta: '', email: '', telefono: '',
       password: (state.brand && state.brand.registerPassword) || '',
-      // dati grezzi B2C (community / spedizione gadget)
-      nome, cognome, indirizzo, whatsapp, consumer: true,
+      // dati COMMUNITY (destinazione B) + consensi
+      consumer: true,
+      community: {
+        nome, cognome,
+        whatsapp:  _val('setupWhatsapp'),
+        email:     _val('setupEmail'),
+        indirizzo: _val('setupIndirizzo'),
+        citta:     _val('setupCitta'),
+        cap:       _val('setupCap'),
+        provincia: _val('setupProvincia'),
+        privacyConsent:   _chk('setupPrivacy'),
+        marketingConsent: _chk('setupMarketing'),
+      },
     };
   }
   return {
@@ -335,6 +346,31 @@ function getSetupData() {
   };
 }
 
+// Testo informativa (mostrato in un piccolo modal in-app)
+const PRIVACY_INFORMATIVA =
+  'I dati inseriti nel presente modulo saranno trattati da ROMANTICA RADIO®, marchio identificativo delle trasmissioni editato in licensing da MG MEDIA COMPANY & PARTNERS soc. coop., per finalità connesse alla gestione della community, all’invio di aggiornamenti, comunicazioni informative, iniziative dedicate ed eventuali gadget o materiali promozionali.\n\n'
+  + 'Il trattamento avverrà nel rispetto del Regolamento UE 2016/679 — GDPR — e della normativa applicabile in materia di protezione dei dati personali. I dati saranno trattati con strumenti informatici e organizzativi idonei a garantirne sicurezza, riservatezza e corretto utilizzo.\n\n'
+  + 'Con l’invio del modulo, l’utente dichiara di aver letto l’informativa privacy e acconsente al trattamento dei dati per le finalità indicate.';
+
+function showPrivacyModal() {
+  let ov = document.getElementById('privacyModal');
+  if (ov) { ov.hidden = false; return; }
+  ov = document.createElement('div');
+  ov.id = 'privacyModal';
+  ov.className = 'modal-overlay';
+  ov.style.zIndex = '60';
+  ov.innerHTML =
+    '<div class="modal-box" style="width:284px;max-height:82vh">'
+    + '<div class="modal-header"><span>Informativa privacy</span>'
+    + '<button class="panel-close" id="btnPrivacyClose">✕</button></div>'
+    + '<div class="modal-body" style="font-family:inherit;color:var(--text);font-size:11.5px;line-height:1.55;white-space:pre-wrap;padding:12px 14px">'
+    + PRIVACY_INFORMATIVA.replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    + '</div></div>';
+  document.getElementById('app').appendChild(ov);
+  ov.addEventListener('click', e => { if (e.target === ov) ov.hidden = true; });
+  document.getElementById('btnPrivacyClose').addEventListener('click', () => { ov.hidden = true; });
+}
+
 // Sostituisce il form B2B con la CTA community (solo brand consumerMode)
 function renderConsumerSetup() {
   if (!isConsumer()) return;
@@ -342,15 +378,32 @@ function renderConsumerSetup() {
   if (hdr) hdr.textContent = '💗 Entra nella community';
   const body = document.getElementById('setupBody');
   if (!body) return;
+  const cta = 'Unisciti alla community di Romantica Radio: ricevi aggiornamenti, iniziative speciali e, quando disponibili, gadget dedicati agli ascoltatori.';
+  const inp = (id, ph) => '<input type="text" id="'+id+'" placeholder="'+ph+'" class="setup-input"/>';
   body.innerHTML =
-    '<p style="font-size:12px;line-height:1.5;opacity:.8;margin:0 0 4px">Inserisci i tuoi dati, entra a far parte della nostra community per restare sempre aggiornato e ricevere i nostri gadget.</p>'
-    + '<input type="text" id="setupNome"      placeholder="Nome *"                        class="setup-input"/>'
-    + '<input type="text" id="setupCognome"   placeholder="Cognome *"                     class="setup-input"/>'
-    + '<input type="text" id="setupIndirizzo" placeholder="Indirizzo per la spedizione *" class="setup-input"/>'
-    + '<input type="tel"  id="setupWhatsapp"  placeholder="Numero WhatsApp *"             class="setup-input"/>'
-    + '<span id="setupHostInfo" class="mono" style="font-size:9px;opacity:0.28;line-height:1.4"></span>'
+    '<p style="font-size:12px;line-height:1.5;opacity:.8;margin:0 0 4px">'+cta+'</p>'
+    + inp('setupNome','Nome *')
+    + inp('setupCognome','Cognome *')
+    + '<input type="tel" id="setupWhatsapp" placeholder="Numero WhatsApp *" class="setup-input"/>'
+    + '<input type="email" id="setupEmail" placeholder="Email" class="setup-input"/>'
+    + inp('setupIndirizzo','Indirizzo completo *')
+    + inp('setupCitta','Città *')
+    + '<div class="row-pair" style="gap:6px">'
+    +   '<input type="text" id="setupCap" placeholder="CAP *" class="setup-input" style="flex:1"/>'
+    +   '<input type="text" id="setupProvincia" placeholder="Provincia *" class="setup-input" style="flex:1"/>'
+    + '</div>'
+    + '<label style="display:flex;gap:7px;align-items:flex-start;font-size:11px;line-height:1.4;opacity:.85;margin-top:4px;cursor:pointer">'
+    +   '<input type="checkbox" id="setupPrivacy" style="margin-top:2px;flex-shrink:0"/>'
+    +   '<span>Ho letto l’<a href="#" id="privacyLink" style="color:var(--primary);text-decoration:underline">informativa privacy</a> e acconsento al trattamento dei miei dati per la gestione della community, l’invio di aggiornamenti, iniziative dedicate ed eventuali gadget di ROMANTICA RADIO®. *</span>'
+    + '</label>'
+    + '<label style="display:flex;gap:7px;align-items:flex-start;font-size:11px;line-height:1.4;opacity:.85;cursor:pointer">'
+    +   '<input type="checkbox" id="setupMarketing" style="margin-top:2px;flex-shrink:0"/>'
+    +   '<span>Acconsento a ricevere comunicazioni promozionali, iniziative commerciali e aggiornamenti tramite WhatsApp, SMS, email o altri strumenti di contatto indicati nel modulo.</span>'
+    + '</label>'
     + '<span id="setupError" style="color:#E53E2D;font-size:10px;display:none"></span>'
-    + '<button id="btnSetupSave" style="width:100%;padding:9px;background:var(--primary);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;margin-top:2px">Entra</button>';
+    + '<button id="btnSetupSave" style="width:100%;padding:9px;background:var(--primary);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;margin-top:2px">Entra nella community</button>';
+  const pl = document.getElementById('privacyLink');
+  if (pl) pl.addEventListener('click', e => { e.preventDefault(); showPrivacyModal(); });
 }
 
 async function doRegister() {
@@ -398,12 +451,20 @@ async function checkFirstRun() {
     document.getElementById('btnSetupSave').addEventListener('click', async () => {
       const d = getSetupData();
       const errEl = document.getElementById('setupError');
-      // Validazione campi obbligatori (diversa per B2C)
-      const missing = isConsumer()
-        ? (!d.nome || !d.cognome || !d.indirizzo || !d.whatsapp)
-        : (!d.insegna || !d.referente || !d.email || !d.password);
+      // Validazione campi obbligatori (diversa per B2C) — la privacy BLOCCA se non spuntata
+      let missing = false, errMsg = 'Compila tutti i campi obbligatori (*)';
+      if (isConsumer()) {
+        const c = d.community || {};
+        missing = !c.nome || !c.cognome || !c.whatsapp || !c.indirizzo || !c.citta || !c.cap || !c.provincia;
+        if (!missing && !c.privacyConsent) {
+          missing = true;
+          errMsg = 'Per continuare devi accettare l’informativa privacy.';
+        }
+      } else {
+        missing = !d.insegna || !d.referente || !d.email || !d.password;
+      }
       if (missing) {
-        errEl.textContent = 'Compila tutti i campi obbligatori (*)';
+        errEl.textContent = errMsg;
         errEl.style.display = 'block';
         return;
       }
@@ -411,7 +472,21 @@ async function checkFirstRun() {
       btn.textContent = 'Verifica in corso…'; btn.disabled = true;
       errEl.style.display = 'none';
       try {
-        // Tenta registrazione — il Rust verifica la password lato server
+        // B2C: invia i dati + consensi alla lista community (destinazione B)
+        if (isConsumer()) {
+          const c = d.community || {};
+          await safeInvoke('community_register', { payload: {
+            brand:      (state.brand && state.brand.brandId) || '',
+            uuid:       uuid,
+            first_name: c.nome, last_name: c.cognome,
+            whatsapp:   c.whatsapp, email: c.email,
+            address:    c.indirizzo, city: c.citta, cap: c.cap, province: c.provincia,
+            privacy_consent:   !!c.privacyConsent,
+            marketing_consent: !!c.marketingConsent,
+            policy_version:    POLICY_VERSION,
+          }});
+        }
+        // Registrazione DISPOSITIVO — il Rust verifica la password lato server
         await safeInvoke('telemetry_register', {
           uuid:      uuid,
           brand:     (state.brand && state.brand.brandId) || '',

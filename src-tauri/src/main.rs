@@ -267,6 +267,12 @@ async fn telemetry_register(
     result
 }
 
+/// Iscrizione community (B2C) — inoltra il payload alla lista dedicata.
+#[tauri::command]
+async fn community_register(payload: serde_json::Value) -> Result<u16, ()> {
+    Ok(telemetry::post_community(payload).await)
+}
+
 #[tauri::command]
 async fn send_track_change(
     tele:      tauri::State<'_, TelemetryState>,
@@ -381,6 +387,7 @@ fn main() {
             set_session_id,
             telemetry_init,
             telemetry_register,
+            community_register,
             send_event,
             send_track_change,
             telemetry_health,

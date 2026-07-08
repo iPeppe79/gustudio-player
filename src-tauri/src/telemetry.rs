@@ -211,6 +211,16 @@ pub async fn post_track_change(
     }
 }
 
+/// Iscrizione community (B2C): invia dati utente + consensi alla lista dedicata.
+/// L'api_key resta lato Rust (mai nel frontend).
+pub async fn post_community(payload: serde_json::Value) -> u16 {
+    let url = format!("{}/community-register?api_key={}", BASE, api_key());
+    match client().post(&url).json(&payload).send().await {
+        Ok(resp) => resp.status().as_u16(),
+        Err(_)   => 0,
+    }
+}
+
 pub async fn do_register(info: &PlayerInfo) -> Result<String, String> {
     let url  = format!("{}/player-register?api_key={}", BASE, api_key());
     let resp = client().post(&url).json(info).send().await.map_err(|e| e.to_string())?;
