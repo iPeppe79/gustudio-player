@@ -1,0 +1,25 @@
+{
+  "productName": "Romantica Radio",
+  "identifier": "it.gustudio.romanticaradio",
+  "app": {
+    "windows": [
+      {
+        "title": "Romantica Radio",
+        "width": 320,
+        "height": 524,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "center": true,
+        "shadow": false
+      }
+    ]
+  },
+  "bundle": {
+    "icon": [
+      "icons/romantica.icns",
+      "icons/romantica-icon.png",
+      "icons/romantica.ico"
+    ]
+  }
+}

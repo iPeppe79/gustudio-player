@@ -1,0 +1,15 @@
+{
+  "brandId": "romantica",
+  "productName": "Romantica Radio",
+  "windowTitle": "Romantica Radio",
+  "streamUrl": "http://62.149.200.200:8000/romanticaradio",
+  "theme": {
+    "primary": "#CF2C7C",
+    "background": "#140810",
+    "text": "#FCEAF3"
+  },
+  "colors": ["#CF2C7C", "#F5A8CC"],
+  "eqColors": ["#F5A8CC", "#CF2C7C"],
+  "logoHeight": 40,
+  "fallbackCover": "/romantica-cover.jpg"
+}
