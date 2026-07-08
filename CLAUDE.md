@@ -189,20 +189,32 @@ per-brand (nome app/identifier/titolo/icona; `tauri.conf.json` è statico su fun
     (alpha da luminanza, RGB forzato bianco) → `romantica-logo.png` galleggia sull'header scuro.
     Cover = `cover.jpg` (cuori/note). Icone da `icona.png` quadrata.
 
-### B2C / CONSUMER MODE (brand community, es. Romantica)
-Un brand con **`"consumerMode": true`** nel suo `<brand>.json` sostituisce il setup B2B con
-una **CTA community** (per player destinati ai clienti finali, non alle postazioni):
-- Setup modal: "💗 Entra nella community" + testo, campi **Nome, Cognome, Indirizzo (spedizione),
-  Numero WhatsApp** (tutti obbligatori). Niente email, **niente password chiesta**.
-- **Password hardcodata** nel brand: `"registerPassword": "romantica"` (inviata in automatico
-  a `player-register`; il server la valida come per le postazioni. Verificato: 200 OK).
-- Il player **parte solo a form completo**. `main.js`: `isConsumer()`, `renderConsumerSetup()`,
-  `getSetupData()` mappa i dati sui campi di registrazione esistenti (**destinazione A**):
-  referente = Nome+Cognome, via = indirizzo, telefono = whatsapp; i grezzi (nome/cognome/
-  indirizzo/whatsapp) restano in `station_data`. Validazione B2C separata in `checkFirstRun`.
-- **TODO destinazione B**: elenco "community" dedicato lato server per gestire le spedizioni
-  gadget (nome/cognome/indirizzo/whatsapp come campi propri) — ora i dati stanno nel pannello
-  postazioni come per il B2B.
+### B2C / CONSUMER MODE (brand community, es. Romantica) — VERIFICATO 08/07/2026
+Un brand con **`"consumerMode": true`** + **`"registerPassword": "<pw>"`** nel suo `<brand>.json`
+sostituisce il setup B2B con una **CTA community** (player per i clienti finali):
+- Setup modal (`renderConsumerSetup` in main.js): "💗 Entra nella community" + testo, campi
+  **Nome*, Cognome*, WhatsApp*, Email(opz), Indirizzo completo*, Città*, CAP*, Provincia***,
+  **checkbox privacy OBBLIGATORIA** (blocca l'invio; link → modal informativa in-app
+  `showPrivacyModal`, `PRIVACY_INFORMATIVA` + `POLICY_VERSION`), **checkbox marketing opzionale**.
+  Niente dati tecnici a video. Player parte solo a form completo + privacy spuntata.
+- **Password hardcodata** (`registerPassword`) inviata in automatico a `player-register` (device).
+- Al submit: **1)** `community_register` (comando Rust → `POST /api/community-register`, api_key
+  lato Rust) invia i dati personali + consensi (destinazione **B**); **2)** `telemetry_register`
+  registra il DISPOSITIVO minimale (no dati personali). `station_data` in localStorage.
+- **Dati tecnici** (MAC/hostname/IP/UUID): raccolti solo per device/health, **non** nella lista
+  community, **non** dichiarati nell'informativa (scelta utente).
+
+### Server — lista community (destinazione B)
+- `POST /api/community-register` (api_key, in `PLAYER_API_ALLOWED_PATHS`): valida consenso privacy
+  (400 se assente), salva in **`community/<brand>.ndjson`** con `privacy_consent`+`privacy_ts`+
+  `policy_version` e `marketing_consent`+`marketing_ts`, IP da X-Real-IP.
+- `GET /api/community-list?station=<slug>` (o `?brand=`) → JSON iscritti (admin/session).
+- `GET /api/community-export?station=<slug>` → **CSV** (BOM Excel, `;`).
+- Mappa `_STATION_BRAND = {"romanticaradio":"romantica"}` (slug→brand). Auth: i due GET sono
+  nella pagina `/radio` di `PAGE_ACCESS_PREFIXES` (admin sempre; utenti con accesso Radio).
+- **UI**: nel modal stazione (`openRecLogModal`) tab **👥 Iscritti** — appare solo se lo slug è in
+  `COMMUNITY_STATIONS = ['romanticaradio']`. `rlLoadCommunity` (tabella + ricerca + **⬇ CSV** e
+  **⬇ PDF** "Salva come PDF" via window.print in nuova scheda).
 
 ---
 
