@@ -180,10 +180,15 @@ per-brand (nome app/identifier/titolo/icona; `tauri.conf.json` è statico su fun
   (`Library not loaded: @executable_path/lib/libass...`).
 - **CI**: `build-players.yml` è parametrico (`workflow_dispatch` inputs `brand` + `tauri_args`).
   One Radio: brand=`professione-casa`, tauri_args=`--config src-tauri/tauri.oneradio.conf.json`.
-- **Romantica Radio (romantica)** — VERIFICATO 08/07/2026, arm64 in Drive `PLAYER/ROMANTICA RADIO/`:
+- **Romantica Radio (romantica)** — VERIFICATO 08/07/2026, Drive `PLAYER/ROMANTICA RADIO/`:
   - stream **HTTP** `http://62.149.200.200:8000/romanticaradio` (station_id `romanticaradio`),
     rosa **#CF2C7C**, sfondo #140810, identifier `it.gustudio.romanticaradio`,
     override `tauri.romantica.conf.json`. Build: `BRAND=romantica npm run tauri build -- --config src-tauri/tauri.romantica.conf.json`.
+  - **Destinazione obbligatoria DMG**: `/Volumes/5TBUSB3/CLOUDING/GDRIVE PEPPE/GUSTUDIO79/PLAYER/ROMANTICA RADIO/`
+    (NON creare/usare `PLAYER/ROMANTICA`). File x64: `Romantica Radio_0.1.0_x64_mpv.dmg`.
+  - **Intel x64**: se `bundle_dmg.sh` fallisce, la `.app` è comunque generata; copiare
+    `Contents/MacOS/lib` dal bundle FunSide/One Radio x64, poi creare DMG manuale con
+    `Romantica Radio.app` + symlink `Applications -> /Applications`. DMG valido ≈31 MB.
   - **EQ** `eqColors:["#F5A8CC","#CF2C7C"]` (rosa chiaro→rosa).
   - **Header**: il PNG originale era logo bianco su fondo rosa pieno → l'ho reso trasparente
     (alpha da luminanza, RGB forzato bianco) → `romantica-logo.png` galleggia sull'header scuro.
