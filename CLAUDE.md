@@ -178,9 +178,17 @@ per-brand (nome app/identifier/titolo/icona; `tauri.conf.json` è statico su fun
 - **x64 Intel**: STESSO comando sull'altro Mac. ⚠ come funside x64, il bundle deve includere
   le **dylib mpv** in `<App>/Contents/MacOS/lib` (Homebrew non portabile). DMG ~6 MB = rotto
   (`Library not loaded: @executable_path/lib/libass...`).
-- **CI**: `build-players.yml` è parametrico (`workflow_dispatch` inputs `brand` + `tauri_args`).
-  One Radio: brand=`professione-casa`, tauri_args=`--config src-tauri/tauri.oneradio.conf.json`.
-- **Romantica Radio (romantica)** — VERIFICATO 08/07/2026, Drive `PLAYER/ROMANTICA RADIO/`:
+- **CI**: `build-players.yml` e `build-windows.yml` sono parametrici (`workflow_dispatch` inputs
+  `brand` + `tauri_args`). Windows (mpv.exe+DLL): `gh workflow run "Build Windows" -f brand=<id>
+  -f tauri_args="--config src-tauri/tauri.<brand>.conf.json"`.
+- **⚠️ CI Windows bloccata dal BILLING GitHub Actions** (esaurito il credito → il job non ottiene
+  runner, fallisce in ~2s `runner_id:0`). Fix: sistemare billing, OPPURE **trucco repo pubblico**:
+  i repo pubblici hanno Actions gratis illimitato. Basso rischio perché in `gustudio-player` non
+  c'è nulla di davvero segreto (PLAYER_API_KEY `pc-radio-2026` e `registerPassword` sono già dentro
+  ogni binario distribuito, IP VPS già pubblico via DNS; `.env`/`.env.vps`/chiave SSH NON nel repo).
+  Procedura: Settings→visibility **Public** → `gh workflow run "Build Windows" …` → attendi ~12 min →
+  `gh run download <id>` → rimetti **Private**. VERIFICATO 08/07: Romantica Windows buildata così.
+- **Romantica Radio (romantica)** — VERIFICATO 08/07/2026, arm64 + **x64 Windows** in Drive `PLAYER/ROMANTICA RADIO/`:
   - stream **HTTP** `http://62.149.200.200:8000/romanticaradio` (station_id `romanticaradio`),
     rosa **#CF2C7C**, sfondo #140810, identifier `it.gustudio.romanticaradio`,
     override `tauri.romantica.conf.json`. Build: `BRAND=romantica npm run tauri build -- --config src-tauri/tauri.romantica.conf.json`.
