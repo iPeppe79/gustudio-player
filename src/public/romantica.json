@@ -11,5 +11,7 @@
   "colors": ["#CF2C7C", "#F5A8CC"],
   "eqColors": ["#F5A8CC", "#CF2C7C"],
   "logoHeight": 40,
-  "fallbackCover": "/romantica-cover.jpg"
+  "fallbackCover": "/romantica-cover.jpg",
+  "consumerMode": true,
+  "registerPassword": "romantica"
 }

@@ -305,16 +305,52 @@ async function fetchCover(title, artist) {
 }
 
 // ── Telemetria ────────────────────────────────────────────────────────────────
+// Brand B2C (community): setup con nome/cognome/indirizzo/whatsapp, password hardcodata.
+function isConsumer() { return !!(state.brand && state.brand.consumerMode); }
+
+function _val(id) { const e = document.getElementById(id); return e ? e.value.trim() : ''; }
+
 function getSetupData() {
+  if (isConsumer()) {
+    const nome = _val('setupNome'), cognome = _val('setupCognome');
+    const indirizzo = _val('setupIndirizzo'), whatsapp = _val('setupWhatsapp');
+    const full = (nome + ' ' + cognome).trim();
+    return {
+      // mappatura sui campi di registrazione esistenti (destinazione A)
+      insegna: full, referente: full, via: indirizzo, citta: '', email: '',
+      telefono: whatsapp,
+      password: (state.brand && state.brand.registerPassword) || '',
+      // dati grezzi B2C (community / spedizione gadget)
+      nome, cognome, indirizzo, whatsapp, consumer: true,
+    };
+  }
   return {
-    insegna:   (document.getElementById('setupInsegna')  && document.getElementById('setupInsegna').value.trim())   || '',
-    via:       (document.getElementById('setupVia')       && document.getElementById('setupVia').value.trim())       || '',
-    citta:     (document.getElementById('setupCitta')     && document.getElementById('setupCitta').value.trim())     || '',
-    referente: (document.getElementById('setupReferente') && document.getElementById('setupReferente').value.trim()) || '',
-    email:     (document.getElementById('setupEmail')     && document.getElementById('setupEmail').value.trim())     || '',
-    telefono:  (document.getElementById('setupTel')       && document.getElementById('setupTel').value.trim())       || '',
-    password:  (document.getElementById('setupPassword')  && document.getElementById('setupPassword').value)        || '',
+    insegna:   _val('setupInsegna'),
+    via:       _val('setupVia'),
+    citta:     _val('setupCitta'),
+    referente: _val('setupReferente'),
+    email:     _val('setupEmail'),
+    telefono:  _val('setupTel'),
+    password:  (document.getElementById('setupPassword') && document.getElementById('setupPassword').value) || '',
   };
+}
+
+// Sostituisce il form B2B con la CTA community (solo brand consumerMode)
+function renderConsumerSetup() {
+  if (!isConsumer()) return;
+  const hdr = document.querySelector('#setupModal .modal-header span');
+  if (hdr) hdr.textContent = '💗 Entra nella community';
+  const body = document.getElementById('setupBody');
+  if (!body) return;
+  body.innerHTML =
+    '<p style="font-size:12px;line-height:1.5;opacity:.8;margin:0 0 4px">Inserisci i tuoi dati, entra a far parte della nostra community per restare sempre aggiornato e ricevere i nostri gadget.</p>'
+    + '<input type="text" id="setupNome"      placeholder="Nome *"                        class="setup-input"/>'
+    + '<input type="text" id="setupCognome"   placeholder="Cognome *"                     class="setup-input"/>'
+    + '<input type="text" id="setupIndirizzo" placeholder="Indirizzo per la spedizione *" class="setup-input"/>'
+    + '<input type="tel"  id="setupWhatsapp"  placeholder="Numero WhatsApp *"             class="setup-input"/>'
+    + '<span id="setupHostInfo" class="mono" style="font-size:9px;opacity:0.28;line-height:1.4"></span>'
+    + '<span id="setupError" style="color:#E53E2D;font-size:10px;display:none"></span>'
+    + '<button id="btnSetupSave" style="width:100%;padding:9px;background:var(--primary);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;margin-top:2px">Entra</button>';
 }
 
 async function doRegister() {
@@ -349,6 +385,7 @@ async function checkFirstRun() {
   if (localStorage.getItem('station_data')) return;
   const modal = document.getElementById('setupModal');
   if (!modal) return;
+  renderConsumerSetup(); // brand B2C: sostituisce il form con la CTA community
   try {
     const info = await safeInvoke('get_system_info');
     if (info) {
@@ -361,8 +398,11 @@ async function checkFirstRun() {
     document.getElementById('btnSetupSave').addEventListener('click', async () => {
       const d = getSetupData();
       const errEl = document.getElementById('setupError');
-      // Validazione campi obbligatori
-      if (!d.insegna || !d.referente || !d.email || !d.password) {
+      // Validazione campi obbligatori (diversa per B2C)
+      const missing = isConsumer()
+        ? (!d.nome || !d.cognome || !d.indirizzo || !d.whatsapp)
+        : (!d.insegna || !d.referente || !d.email || !d.password);
+      if (missing) {
         errEl.textContent = 'Compila tutti i campi obbligatori (*)';
         errEl.style.display = 'block';
         return;
