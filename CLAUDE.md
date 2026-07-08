@@ -16,6 +16,7 @@ Brand attuali:
 - **One Radio** (professione-casa) — rosso #E53E2D
 - **Fun Side** (funside) — azzurro #29ABE2
 - **GUSTracks** (gustracks) — oro #C8A85A
+- **Romantica Radio** (romantica) — rosa #CF2C7C — **B2C/consumer** (CTA community, no B2B)
 
 ---
 
@@ -179,6 +180,29 @@ per-brand (nome app/identifier/titolo/icona; `tauri.conf.json` è statico su fun
   (`Library not loaded: @executable_path/lib/libass...`).
 - **CI**: `build-players.yml` è parametrico (`workflow_dispatch` inputs `brand` + `tauri_args`).
   One Radio: brand=`professione-casa`, tauri_args=`--config src-tauri/tauri.oneradio.conf.json`.
+- **Romantica Radio (romantica)** — VERIFICATO 08/07/2026, arm64 in Drive `PLAYER/ROMANTICA RADIO/`:
+  - stream **HTTP** `http://62.149.200.200:8000/romanticaradio` (station_id `romanticaradio`),
+    rosa **#CF2C7C**, sfondo #140810, identifier `it.gustudio.romanticaradio`,
+    override `tauri.romantica.conf.json`. Build: `BRAND=romantica npm run tauri build -- --config src-tauri/tauri.romantica.conf.json`.
+  - **EQ** `eqColors:["#F5A8CC","#CF2C7C"]` (rosa chiaro→rosa).
+  - **Header**: il PNG originale era logo bianco su fondo rosa pieno → l'ho reso trasparente
+    (alpha da luminanza, RGB forzato bianco) → `romantica-logo.png` galleggia sull'header scuro.
+    Cover = `cover.jpg` (cuori/note). Icone da `icona.png` quadrata.
+
+### B2C / CONSUMER MODE (brand community, es. Romantica)
+Un brand con **`"consumerMode": true`** nel suo `<brand>.json` sostituisce il setup B2B con
+una **CTA community** (per player destinati ai clienti finali, non alle postazioni):
+- Setup modal: "💗 Entra nella community" + testo, campi **Nome, Cognome, Indirizzo (spedizione),
+  Numero WhatsApp** (tutti obbligatori). Niente email, **niente password chiesta**.
+- **Password hardcodata** nel brand: `"registerPassword": "romantica"` (inviata in automatico
+  a `player-register`; il server la valida come per le postazioni. Verificato: 200 OK).
+- Il player **parte solo a form completo**. `main.js`: `isConsumer()`, `renderConsumerSetup()`,
+  `getSetupData()` mappa i dati sui campi di registrazione esistenti (**destinazione A**):
+  referente = Nome+Cognome, via = indirizzo, telefono = whatsapp; i grezzi (nome/cognome/
+  indirizzo/whatsapp) restano in `station_data`. Validazione B2C separata in `checkFirstRun`.
+- **TODO destinazione B**: elenco "community" dedicato lato server per gestire le spedizioni
+  gadget (nome/cognome/indirizzo/whatsapp come campi propri) — ora i dati stanno nel pannello
+  postazioni come per il B2B.
 
 ---
 
