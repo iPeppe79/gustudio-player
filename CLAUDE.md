@@ -296,6 +296,23 @@ Allineato a `.NET NowPlayingService.IsNonMusical`:
 
 ---
 
+## VERSIONING — schema CalVer `2026.N` (dal 10/07/2026)
+La versione del player serve a **riconoscere a colpo d'occhio se un player è aggiornato**.
+Il vecchio `0.1.0 #<commit>` non andava bene: il commit è criptico **e** cambiava anche su
+rebuild di codice identico (confonde). Schema attuale:
+- **Fonte UNICA**: campo `version` in `src-tauri/tauri.conf.json` (i brand override ereditano,
+  non lo ridefiniscono). `vite.config.js` la inietta come `__APP_VERSION__`; `main.js` non ha
+  più `0.1.0` hardcodato (`VERSION = __APP_VERSION__`).
+- **Formato**: `2026.<N>.0` (semver valido richiesto da Tauri). `N` = contatore di release,
+  **si incrementa a mano a ogni build distribuita** (2026.1.0 → 2026.2.0 → …). Rebuild identico
+  = stessa versione. Anno come major = capisci subito da quando è.
+- **UI utente**: mostra solo `v2026.N.0`. Il `#commit` (`BUILD_DEBUG`) resta **solo nel debug**
+  (tooltip su `installedVersion`), non a schermo.
+- **Come rilasciare**: alza `version` in `tauri.conf.json`, poi rebuild dei brand. Il nome DMG
+  incorpora la versione (`FunSide Radio_2026.1.0_aarch64.dmg`). Su Drive rinomino
+  `<App>_<ver>_arm64_mpv.dmg` e rimuovo il DMG della versione precedente.
+- Stato: **2026.1.0** — Funside + One Radio arm64 buildati insieme al commit `c2d8f4c5`.
+
 ## STATO DEBUG — 2026-07-10
 
 ### Sessione 2026-07-10 — postazioni per stazione + storage SQLite + self-heal (server)
