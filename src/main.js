@@ -4,12 +4,17 @@ import { listen }           from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 
-/* global __BRAND__, __BUILD_MODE__, __BUILD_COMMIT__ */
+/* global __BRAND__, __BUILD_MODE__, __BUILD_COMMIT__, __APP_VERSION__ */
 const COMPILED_BRAND = __BRAND__;
 const IS_DEV_BUILD   = __BUILD_MODE__ === 'dev';
-const VERSION      = '0.1.0';
+// Versione = fonte unica tauri.conf.json (CalVer "2026.N", N incrementale per release).
+const VERSION      = __APP_VERSION__ || '0.0.0';
 const BUILD_COMMIT = __BUILD_COMMIT__ || '';
-const BUILD_LABEL  = VERSION + (BUILD_COMMIT ? ' #' + BUILD_COMMIT : '');
+// Etichetta utente: solo il numero versione (es. "v2026.1"). Il #commit NON si mostra
+// all'utente (era criptico e cambiava anche su rebuild identici) → solo nel debug.
+const BUILD_LABEL  = VERSION;
+// Etichetta tecnica completa per il pannello DEBUG (versione + commit).
+const BUILD_DEBUG  = VERSION + (BUILD_COMMIT ? ' #' + BUILD_COMMIT : '');
 const DEFAULT_ICY_DELAY_MS = 4000;
 let   ICY_DELAY_MS = parseInt(localStorage.getItem('icy_delay_ms') || String(DEFAULT_ICY_DELAY_MS), 10);
 if (ICY_DELAY_MS === 18000) {
@@ -1032,7 +1037,9 @@ async function init() {
   document.getElementById('btnLogClose').addEventListener('click', () => { logPanel.hidden=true; });
   document.getElementById('btnCopyLog').addEventListener('click', copyLog);
   document.getElementById('btnCopyLogInPanel').addEventListener('click', copyLog);
-  document.getElementById('installedVersion').textContent = BUILD_LABEL;
+  const _instVer = document.getElementById('installedVersion');
+  _instVer.textContent = 'v' + BUILD_LABEL;      // utente: solo numero versione (es. v2026.1)
+  _instVer.title       = BUILD_DEBUG;            // debug: commit visibile in hover
   document.getElementById('playerUuid').textContent       = uuid;
 
   // ICY delay slider — di default AUTO (segue la cache mpv). Toccarlo passa a manuale.
