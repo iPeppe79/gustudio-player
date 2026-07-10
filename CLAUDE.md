@@ -311,7 +311,13 @@ rebuild di codice identico (confonde). Schema attuale:
 - **Come rilasciare**: alza `version` in `tauri.conf.json`, poi rebuild dei brand. Il nome DMG
   incorpora la versione (`FunSide Radio_2026.1.0_aarch64.dmg`). Su Drive rinomino
   `<App>_<ver>_arm64_mpv.dmg` e rimuovo il DMG della versione precedente.
-- Stato: **2026.1.0** — Funside + One Radio arm64 buildati insieme al commit `c2d8f4c5`.
+- **⚠️ Windows / MSI**: l'installer MSI (WiX) richiede *version major ≤ 255* → `2026.x.y`
+  lo fa fallire (`app version major number cannot be greater than 255`). Soluzione: su Windows
+  si distribuisce **solo l'installer NSIS (`.exe`)**, non l'MSI. In `tauri.conf.json`
+  `bundle.targets` è la lista esplicita `["app","dmg","nsis"]` (niente `msi`): Mac fa app+dmg,
+  Windows fa nsis. Il limite 255 è specifico dell'MSI; l'`.exe` e i metadata VERSIONINFO usano
+  campi a 16 bit dove `2026` ci sta. Così la versione resta identica su tutti gli OS.
+- Stato: **2026.1.0** — Funside + One Radio arm64 (commit `c2d8f4c5`); Windows NSIS via CI.
 
 ## STATO DEBUG — 2026-07-10
 
