@@ -7,8 +7,10 @@
 name: Build Players
 
 on:
-  push:
-    branches: [main]
+  # Trigger automatico su push DISABILITATO (10/07/2026): i run restavano appesi
+  # fino al timeout 24h bruciando minuti Actions. Build ora solo manuali.
+  # push:
+  #   branches: [main]
   workflow_dispatch:
     inputs:
       brand:
