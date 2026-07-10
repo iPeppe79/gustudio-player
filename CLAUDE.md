@@ -345,6 +345,35 @@ Tre fix lato server (`GUStudio7.9`), tutti live su VPS e su `main`:
   inclusa `romanticaradio`. In consumer mode l'`insegna` resta vuota (dati personali → lista
   community, non nei players): corretto.
 
+### Sessione 2026-07-10 — versioning CalVer + riallineamento build tutti gli OS (client)
+Obiettivo utente: "un numero univoco per riconoscere se un player è aggiornato" (il `#commit`
+era criptico e cambiava anche su rebuild identici) + Funside e One Radio (B2B) allineati allo
+**stesso commit/versione**; Romantica (B2C) resta a sé.
+- **Schema versione CalVer `2026.N.0`** (vedi sez. VERSIONING): fonte unica `tauri.conf.json`,
+  letta da vite (`__APP_VERSION__`); niente più `0.1.0` hardcodato in `main.js`. UI utente mostra
+  solo `v2026.1.0`; `#commit` solo nel debug (tooltip su `installedVersion`). `N` si alza a mano
+  per release. Commit chiave: `c2d8f4c5`.
+- **Windows solo NSIS (no MSI)**: l'MSI/WiX vieta `version major > 255` → `2026` rompeva la build
+  (`app version major number cannot be greater than 255`). Fix: `bundle.targets`
+  `["app","dmg","nsis"]`. Commit `5b257b5`. (1° tentativo CI fallito allo step MSI, 2° ok.)
+- **Icona One Radio**: `oneradio.icns` era **1.6 MB** (PNG full-color, non comprimibile nel DMG)
+  → One Radio DMG pesava 12 MB vs Funside 8.3 MB. Ottimizzata con **pngquant** (palette+dither,
+  nessuna perdita visibile) → **401 KB**, DMG sceso a 9.8 MB. Commit `8ec6f96`. Il `.ico` Windows
+  (92 KB) non tocca il peso installer in modo rilevante.
+- **CI "Build Players" (auto su push) DISABILITATA** (commit `517c8ba`): i run restavano appesi al
+  timeout 24h bruciando minuti Actions. Ora build solo manuali (`workflow_dispatch`).
+- **Windows via CI** (repo reso PUBLIC per Actions gratis): due run `workflow_dispatch` di
+  "Build Windows", brand `funside` e `professione-casa` → installer NSIS `2026.1.0` (~39 MB).
+- **Release completa su Google Drive**, tutti a `v2026.1.0`, stesso schema nomi
+  `<App>_2026.1.0_<arch>_mpv.<ext>`. Vecchi `0.1.0` (DMG + Windows exe/msi) rimossi:
+  | Brand | arm64 (questo Mac) | x64 Intel (altro Mac) | Windows x64 (CI, NSIS) |
+  |-------|--------------------|-----------------------|------------------------|
+  | FunSide | `_arm64_mpv.dmg` 8.3M | `_x64_mpv.dmg` 31M | `_x64-setup.exe` 39M |
+  | One Radio | `_arm64_mpv.dmg` 9.8M | `_x64_mpv.dmg` 33M | `_x64-setup.exe` 39M |
+  - Romantica (B2C) resta all'8/7 (code-equivalente); se la si vuole a `2026.1.0` va ribuildata.
+- **TODO**: (1) test su Windows reale (parte? audio mpv ok? SmartScreen perché non firmato);
+  (2) rimettere la repo **Private**; (3) eventuale rebuild Romantica a `2026.1.0`.
+
 ### Sessione 2026-07-06 — anti-muto, sync ICY, telemetria ricca
 Sintomo utente: "ogni tanto ammutolisce, l'EQ si frizza, il titolo ICY è molto avanti
 rispetto all'audio; il watchdog non interveniva". Diagnosi: **cache mpv grande (30s)**.
@@ -602,8 +631,10 @@ in `src-tauri/bin/` col nome-triple (`mpv-aarch64-apple-darwin`, `mpv-x86_64-app
 
 ## Da fare
 1. ~~EQ reale su Windows~~ **FATTO** (named-pipe `\\.\pipe\gustudio-eq-*`, PCM→FFT come Unix)
-2. Binari mpv self-contained per i 3 triple + firma macOS (packaging distribuzione)
-3. Verifica watchdog live (stacca rete → riaggancio)
-4. Build One Radio / GUSTracks
-5. CI GitHub Actions multi-brand
-6. Ri-registrare "FUNSIDE TEST PEPPE" con dati reali
+2. **Test su Windows reale** degli installer `2026.1.0` NSIS (parte? audio mpv? SmartScreen non firmato)
+3. Firma binari: macOS (`APPLE_*`) e Windows (evitare SmartScreen) — packaging distribuzione
+4. Verifica watchdog live (stacca rete → riaggancio)
+5. Rimettere la repo `gustudio-player` **Private** (resa Public per Actions gratis)
+6. Eventuale rebuild **Romantica** a `2026.1.0` (ora è all'8/7, code-equivalente)
+7. Build **GUSTracks** (brand ancora da produrre)
+8. Ri-registrare "FUNSIDE TEST PEPPE" con dati reali
