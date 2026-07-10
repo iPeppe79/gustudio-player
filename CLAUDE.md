@@ -296,7 +296,31 @@ Allineato a `.NET NowPlayingService.IsNonMusical`:
 
 ---
 
-## STATO DEBUG — 2026-07-06
+## STATO DEBUG — 2026-07-10
+
+### Sessione 2026-07-10 — postazioni per stazione + storage SQLite + self-heal (server)
+Tre fix lato server (`GUStudio7.9`), tutti live su VPS e su `main`:
+- **Postazioni non visibili sotto la stazione** (commit `1217a438`): i player consumer
+  (Romantica) registrano `station_id` = **mount slug** (`romanticaradio`), mentre altri usano
+  l'URL completo. `GET /api/player-stations` faceva match solo su URL completo o id interno →
+  pannello "Postazioni — Romantica Radio" mostrava "0 online / Nessuna postazione", pur comparendo
+  in "tutte le postazioni" (lì niente filtro per stazione). Fix: l'endpoint aggiunge al set di
+  match anche il **mount slug** dell'URL stazione e confronta il `station_id` del player sia
+  intero sia per slug (robusto per entrambi i formati). Rimosso il player di test
+  `test-romantica-0001`.
+- **Storage postazioni JSON → SQLite WAL** (commit `ddb10500`, fatto in sessione parallela/altro
+  Mac): `radio_players.json` + tmp-rename sostituito da **`radio_players.db`** (SQLite WAL). Scala
+  a 200+ postazioni senza race sulla scrittura. `_load_players()` legge da SQLite ma **ritorna lo
+  stesso dict** {uuid: {...}} → il resto del codice (incl. il mio fix mount-slug) invariato.
+  Helper: `_player_upsert()`, `_player_delete()`, `RADIO_PLAYERS_DB`. Il `sqlite3` CLI NON è
+  installato sul VPS: ispezionare il DB via `python3 -c "import sqlite3; ..."`.
+- **Self-heal in player-health** (commit `b38d1c19`): se arriva un evento `/api/player-health` con
+  un `uuid` non presente in `players`, il server **auto-ricrea** l'entry minimale al volo (dai
+  campi dell'evento) senza aspettare un restart/re-register del client → la postazione riappare
+  subito nel pannello.
+- Stato VPS verificato: servizio `active`, **10 postazioni** nel DB tutte viste in giornata,
+  inclusa `romanticaradio`. In consumer mode l'`insegna` resta vuota (dati personali → lista
+  community, non nei players): corretto.
 
 ### Sessione 2026-07-06 — anti-muto, sync ICY, telemetria ricca
 Sintomo utente: "ogni tanto ammutolisce, l'EQ si frizza, il titolo ICY è molto avanti
