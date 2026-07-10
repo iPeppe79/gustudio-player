@@ -440,7 +440,7 @@ rispetto all'audio; il watchdog non interveniva". Diagnosi: **cache mpv grande (
   - objc2 (maschera finestra macOS) è gated `[target.'cfg(target_os="macos")']` → non rompe Win.
   - **DA VERIFICARE su Windows reale** (non testato qui): (1) parte? (2) audio mpv ok o mpv.exe
     reclama DLL accanto (come le dylib su Intel mac) → in tal caso imbarcare le lib di mpv;
-    (3) non firmato → SmartScreen. EQ resta disattivo su Windows (start_pcm `return` su cfg).
+    (3) non firmato → SmartScreen. (EQ su Windows è REALE via named-pipe, vedi sez. Motore audio.)
 
 ---
 
@@ -532,10 +532,11 @@ Il tag `<audio>` è stato RIMOSSO. Play/stop/volume → `invoke()` → mpv via s
   → canvas (barre colorate blu→giallo→rosso). `_fakeEqData`/`AudioContext`/`analyser`
   ELIMINATI dal frontend: nessun residuo fake. Il `<canvas id="eqCanvas">` non esisteva
   in index.html (per questo non si vedeva) — aggiunto.
-- **EQ su WINDOWS = DISATTIVATO (TODO)**: `start_pcm` fa `return` su `#[cfg(windows)]`
-  (come il vecchio Electron: `if win32 return`). mpv su Windows non scrive PCM su una
-  pipe stdout affidabile → EQ fermo, audio ok. DA FARE: EQ reale anche su Windows via
-  **FIFO / named-pipe dedicata** (`\\.\pipe\...`) letta dal backend Rust.
+- **EQ su WINDOWS = REALE (FATTO)**: `start_pcm` ha un ramo `#[cfg(windows)]` completo
+  (mpv.rs ~692-755) che crea una **named pipe** `\\.\pipe\gustudio-eq-<pid>-<gen>`, lancia
+  il 2° mpv con `--ao-pcm-file=<pipe>` (equivalente Windows di `/dev/stdout`) e legge il PCM
+  con lo **stesso `pump_pcm`** (rustfft) di Unix → bande EQ reali. NON è più fake né fermo.
+  Nessun `_fakeEqData` nel frontend (eliminati). Vale identico per tutti i brand.
 - `telemetry.rs`: `audio_engine` ora = `crate::mpv::AUDIO_ENGINE` (`"mpv"`), non hardcoded.
 - Eventi Rust→JS: `mpv-state {phase}`, `mpv-restart`, `mpv-ready`, `eq-bands`.
   `handleMpvState()` in main.js mappa le fasi su UI + telemetria (PLAY_START_OK,
@@ -594,7 +595,7 @@ in `src-tauri/bin/` col nome-triple (`mpv-aarch64-apple-darwin`, `mpv-x86_64-app
 ---
 
 ## Da fare
-1. **EQ reale su Windows** via FIFO/named-pipe (ora l'EQ è attivo solo su macOS)
+1. ~~EQ reale su Windows~~ **FATTO** (named-pipe `\\.\pipe\gustudio-eq-*`, PCM→FFT come Unix)
 2. Binari mpv self-contained per i 3 triple + firma macOS (packaging distribuzione)
 3. Verifica watchdog live (stacca rete → riaggancio)
 4. Build One Radio / GUSTracks
