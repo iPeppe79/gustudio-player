@@ -390,6 +390,9 @@ async fn supervisor(inner: Arc<Inner>) {
         let _ = tx.send(json!({"command":["observe_property",2,"pause"]}).to_string() + "\n");
         let _ = tx.send(json!({"command":["observe_property",3,"core-idle"]}).to_string() + "\n");
         let _ = tx.send(json!({"command":["observe_property",4,"demuxer-cache-duration"]}).to_string() + "\n");
+        // 5: metadata → titolo ICY dal PUNTO AUDIO REALE (in ritardo del ritardo vero),
+        //    serve a misurare la deriva dal live confrontandolo col lettore near-live icy.rs.
+        let _ = tx.send(json!({"command":["observe_property",5,"metadata"]}).to_string() + "\n");
         // volume corrente
         let _ = tx.send(
             json!({"command":["set_property","volume", inner.volume.load(Ordering::Relaxed)]}).to_string()
@@ -502,6 +505,24 @@ async fn reader_loop(
                                                 if (p - last_pts).abs() > 0.05 {
                                                     last_pts_change = Instant::now();
                                                     last_pts = p;
+                                                }
+                                            }
+                                        }
+                                        "metadata" => {
+                                            // titolo ICY al punto audio reale (chiave icy-title/title, case-insensitive)
+                                            if let Some(obj) = msg.get("data").and_then(|v| v.as_object()) {
+                                                let mut title: Option<String> = None;
+                                                for (k, v) in obj {
+                                                    let kl = k.to_lowercase();
+                                                    if kl == "icy-title" || kl == "title" {
+                                                        if let Some(s) = v.as_str() {
+                                                            if !s.trim().is_empty() { title = Some(s.trim().to_string()); }
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+                                                if let Some(t) = title {
+                                                    emit(&inner, "mpv-title", json!({ "title": t }));
                                                 }
                                             }
                                         }

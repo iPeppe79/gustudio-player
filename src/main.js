@@ -27,6 +27,29 @@ if (ICY_DELAY_MS === 18000) {
 let   _icyAutoDelay = localStorage.getItem('icy_manual') !== '1';
 let   _mpvCacheMs   = 0;   // ultima profondità cache (ms) da mpv-stats
 let   _mpvStats     = {};  // ultimo snapshot mpv (cache_secs, reconnects, last_warn, ...)
+// ── Deriva dal live: confronto titolo near-live (icy.rs) vs titolo dal punto AUDIO (mpv metadata) ──
+let   _liveTitleAt  = new Map(); // titolo raw near-live -> timestamp (ms)
+let   _liveLagMs    = 0;         // ultimo ritardo audio↔live misurato (ms)
+let   _lastSnapAt   = 0;         // cooldown snap-to-live
+const LIVE_LAG_SNAP_MS = 30000;  // oltre ~30s di ritardo → riaggancio pulito al live
+function _normTitle(s){ return (s||'').trim().toLowerCase(); }
+// il titolo arriva al punto audio reale: la distanza dal momento near-live = ritardo vero
+function onAudioTitle(raw){
+  const key = _normTitle(raw);
+  if (!key) return;
+  const tLive = _liveTitleAt.get(key);
+  if (tLive) {
+    _liveLagMs = Math.max(0, Date.now() - tLive);
+    log('[LIVE_LAG] '+Math.round(_liveLagMs/1000)+'s ('+raw+')');
+    // snap-to-live: se troppo indietro, ricarico lo stream per riagganciarmi al presente
+    if (_liveLagMs > LIVE_LAG_SNAP_MS && Date.now() - _lastSnapAt > 60000 && state.playing) {
+      _lastSnapAt = Date.now();
+      log('[SNAP_LIVE] ritardo '+Math.round(_liveLagMs/1000)+'s → riaggancio al live');
+      diag('SNAP_LIVE', { audioState:'buffering', issueType:'drift', issueNote:'lag_ms='+Math.round(_liveLagMs) });
+      if (state.brand) safeInvoke('mpv_play', { url: state.brand.streamUrl }).catch(()=>{});
+    }
+  }
+}
 
 function effectiveIcyDelay() {
   if (_icyAutoDelay && _mpvCacheMs > 0) {
@@ -921,6 +944,7 @@ async function troubleshootExtra() {
     last_warn:  mpv.last_warn || undefined,
     icy_delay_ms: effectiveIcyDelay(),
     icy_auto:   _icyAutoDelay,
+    live_lag_ms: _liveLagMs || undefined,   // ritardo reale audio↔live (deriva)
     audio_phase: state.audioPhase,
     volume:     Math.round(_mpvVolume*100),
     net_online: navigator.onLine,
@@ -1094,6 +1118,7 @@ async function init() {
       await listen('mpv-state',   ev => handleMpvState(ev.payload || {}));
       await listen('mpv-restart', ev => handleMpvRestart(ev.payload || {}));
       await listen('mpv-ready',   () => log('[MPV_READY] motore audio connesso'));
+      await listen('mpv-title',   ev => onAudioTitle((ev.payload && ev.payload.title) || ''));
       await listen('eq-bands',    ev => onEqBands((ev.payload && ev.payload.bands) || []));
       await listen('mpv-stats',   ev => {
         const s = ev.payload || {};
@@ -1135,6 +1160,15 @@ async function init() {
         const title  = fixEncoding(ev.payload.title);
         const artist = fixEncoding(ev.payload.artist);
         log('[ICY_RAW] '+raw);
+        // momento NEAR-LIVE del titolo (icy.rs legge quasi in diretta): serve per la deriva
+        const _k = _normTitle(raw);
+        if (_k) {
+          _liveTitleAt.set(_k, Date.now());
+          if (_liveTitleAt.size > 60) { // pulizia: tieni solo gli ultimi ~5 min
+            const cutoff = Date.now() - 300000;
+            for (const [kk, tt] of _liveTitleAt) if (tt < cutoff) _liveTitleAt.delete(kk);
+          }
+        }
         setTimeout(() => {
           if (!state.playing || title===state.currentTitle) return;
           state.currentTitle=title; state.currentArtist=artist;

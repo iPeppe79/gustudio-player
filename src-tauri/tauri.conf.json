@@ -1,6 +1,6 @@
 {
   "productName": "FunSide Radio",
-  "version": "2026.1.0",
+  "version": "2026.2.0",
   "identifier": "it.gustudio.funside",
   "build": {
     "frontendDist": "../dist",
