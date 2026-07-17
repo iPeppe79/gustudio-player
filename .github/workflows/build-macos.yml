@@ -1,0 +1,103 @@
+# Build dedicato macOS (manuale, workflow_dispatch).
+# Procura mpv via Homebrew e lo rende SELF-CONTAINED con dylibbundler
+# (dylib in <App>/Contents/MacOS/lib, riferite via @executable_path/lib) così il
+# .app gira su Mac senza Homebrew. Poi ricrea il .dmg e ri-firma ad-hoc.
+# Matrice: arm64 (macos-14, Apple Silicon) + x64 Intel (macos-13).
+name: Build macOS
+
+on:
+  workflow_dispatch:
+    inputs:
+      brand:
+        description: "Brand id (funside, professione-casa, romantica, gustracks)"
+        default: "funside"
+      tauri_args:
+        description: "Extra args tauri (es. --config src-tauri/tauri.romantica.conf.json)"
+        default: ""
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS-arm64
+            os: macos-14
+            triple: aarch64-apple-darwin
+            archlabel: arm64
+          - name: macOS-x64
+            os: macos-13
+            triple: x86_64-apple-darwin
+            archlabel: x64
+    runs-on: ${{ matrix.os }}
+    name: Build ${{ matrix.name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install deps (npm)
+        run: npm ci
+
+      - name: Prepara sidecar mpv (Homebrew, per l'arch del runner)
+        run: |
+          set -euo pipefail
+          brew install mpv dylibbundler
+          MPV="$(command -v mpv)"
+          mkdir -p src-tauri/bin
+          cp "$MPV" "src-tauri/bin/mpv-${{ matrix.triple }}"
+          chmod +x "src-tauri/bin/mpv-${{ matrix.triple }}"
+          mpv --version | head -1
+
+      # Costruisce SOLO la .app (niente dmg qui: lo ricreiamo noi dopo il fix dylib,
+      # così non dipendiamo dallo step dmg di Tauri che a volte fallisce in CI).
+      - name: Build Tauri app (.app)
+        uses: tauri-apps/tauri-action@v0
+        with:
+          args: --bundles app ${{ github.event.inputs.tauri_args }}
+        env:
+          BRAND: ${{ github.event.inputs.brand || 'funside' }}
+          PLAYER_API_KEY: ${{ secrets.PLAYER_API_KEY }}
+
+      - name: Rendi mpv self-contained + ricrea .dmg
+        run: |
+          set -euo pipefail
+          BUNDLE=src-tauri/target/release/bundle
+          APP="$(find "$BUNDLE/macos" -maxdepth 1 -name '*.app' | head -n1)"
+          test -n "$APP"
+          echo "App: $APP"
+          # 1) bundle + fix delle dylib del sidecar mpv dentro Contents/MacOS/lib
+          dylibbundler -of -b \
+            -x "$APP/Contents/MacOS/mpv" \
+            -d "$APP/Contents/MacOS/lib" \
+            -p '@executable_path/lib/'
+          echo "== otool mpv (NON deve restare nessun /opt/homebrew o /usr/local) =="
+          otool -L "$APP/Contents/MacOS/mpv"
+          if otool -L "$APP/Contents/MacOS/mpv" | grep -E '/opt/homebrew|/usr/local'; then
+            echo "::error::mpv dipende ancora da dylib non portabili"; exit 1
+          fi
+          # 2) ri-firma ad-hoc (dylibbundler invalida la firma; arm64 la richiede)
+          codesign --force --deep -s - "$APP"
+          # 3) ricrea il dmg con nome convenzione Drive: <App>_<ver>_<arch>_mpv.dmg
+          APPNAME="$(basename "$APP" .app)"
+          VER="$(jq -r .version src-tauri/tauri.conf.json)"
+          OUT="$BUNDLE/dmg/${APPNAME}_${VER}_${{ matrix.archlabel }}_mpv.dmg"
+          rm -rf "$BUNDLE/dmg"; mkdir -p "$BUNDLE/dmg"
+          STAGE="$(mktemp -d)"
+          cp -R "$APP" "$STAGE/"
+          ln -s /Applications "$STAGE/Applications"
+          hdiutil create -volname "$APPNAME" -srcfolder "$STAGE" -ov -format UDZO "$OUT"
+          echo "Creato: $OUT ($(du -h "$OUT" | cut -f1))"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: player-macos-${{ matrix.archlabel }}-${{ github.event.inputs.brand || 'funside' }}
+          path: src-tauri/target/release/bundle/dmg/*.dmg
+          retention-days: 14
