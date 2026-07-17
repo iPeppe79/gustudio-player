@@ -73,6 +73,7 @@ jobs:
           test -n "$APP"
           echo "App: $APP"
           # 1) bundle + fix delle dylib del sidecar mpv dentro Contents/MacOS/lib
+          mkdir -p "$APP/Contents/MacOS/lib"
           dylibbundler -of -b \
             -x "$APP/Contents/MacOS/mpv" \
             -d "$APP/Contents/MacOS/lib" \
